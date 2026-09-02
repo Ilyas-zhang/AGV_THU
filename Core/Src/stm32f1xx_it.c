@@ -197,11 +197,11 @@ void SysTick_Handler(void)
   /* USER CODE BEGIN SysTick_IRQn 1 */
   LED_Tick();
   Key_Tick();
-  TestBuzz_Tick();
-  TestMotor_Tick();
-  TestUltrasonic_Tick();
-  TestObstacle_Tick();
-  TestIRAvoid_Tick();
+  // TestBuzz_Tick();
+  // TestMotor_Tick();
+  // TestUltrasonic_Tick();
+  TestObstacle_Tick();         /* 超声避障 */
+  // TestIRAvoid_Tick();       /* 红外避障 — 启用前先关闭 TestObstacle_Tick */
   /* USER CODE END SysTick_IRQn 1 */
 }
 

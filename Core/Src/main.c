@@ -112,11 +112,11 @@ int main(void)
   Key_Init();
   Ultrasonic_Init();
   OLED_Init();
-  TestUltrasonic_Init();
-  TestObstacle_Init();
-  TestIRAvoid_Init();
-  TestBuzz_Init();
-  TestMotor_Init();
+  // TestUltrasonic_Init();   /* 纯测距显示，避障测试时关闭 */
+  TestObstacle_Init();        /* 超声避障（当前启用） */
+  // TestIRAvoid_Init();      /* 红外避障 — 启用前先关闭 TestObstacle，避免抢电机 */
+  // TestBuzz_Init();
+  // TestMotor_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
