@@ -1,0 +1,27 @@
+# Build output
+build/
+
+# IDE
+.idea/
+.settings/
+.vscode/
+.cproject
+.project
+.mxproject
+
+# Build artifacts
+*.o
+*.obj
+*.elf
+*.hex
+*.bin
+*.map
+*.list
+*.d
+*.su
+
+# CubeMX template (regenerated, our CMakeLists.txt is the working copy)
+CMakeLists_template.txt
+
+# Claude Code session data
+.claude/
