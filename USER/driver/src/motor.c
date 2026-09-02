@@ -83,21 +83,20 @@ void car_backward(void)
 
 void car_turn_left(void)
 {
-    /* 右侧前进，左侧停止 → 左转 */
-    motor1_forward(); motor2_forward();
-    motor3_forward(); motor4_forward();
-    /* 差速：左慢右快 — 非PWM版用半速近似 */
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, PWM_ARR / 4);
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, PWM_ARR / 4);
-}
-
-void car_turn_right(void)
-{
-    /* 左侧快，右侧慢 → 右转 */
+    /* 左侧快，右侧慢 → 左转 */
     motor1_forward(); motor2_forward();
     motor3_forward(); motor4_forward();
     __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, PWM_ARR / 4);
     __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, PWM_ARR / 4);
+}
+
+void car_turn_right(void)
+{
+    /* 右侧快，左侧慢 → 右转 */
+    motor1_forward(); motor2_forward();
+    motor3_forward(); motor4_forward();
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, PWM_ARR / 4);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, PWM_ARR / 4);
 }
 
 void car_rotate_left(void)
@@ -225,16 +224,16 @@ void pwm_car_backward(int16_t speed)
 
 void pwm_car_turn_left(int16_t speed)
 {
-    /* 左侧慢，右侧全速 → 左转 */
-    pwm_motor1_forward(MOTOR1_PWM(speed / TURN_SLOW_RATIO)); pwm_motor2_forward(MOTOR2_PWM(speed / TURN_SLOW_RATIO));
-    pwm_motor3_forward(MOTOR3_PWM(speed));                   pwm_motor4_forward(MOTOR4_PWM(speed));
+    /* 左侧全速，右侧慢 → 左转 */
+    pwm_motor1_forward(MOTOR1_PWM(speed));                   pwm_motor2_forward(MOTOR2_PWM(speed));
+    pwm_motor3_forward(MOTOR3_PWM(speed / TURN_SLOW_RATIO)); pwm_motor4_forward(MOTOR4_PWM(speed / TURN_SLOW_RATIO));
 }
 
 void pwm_car_turn_right(int16_t speed)
 {
-    /* 左侧全速，右侧慢 → 右转 */
-    pwm_motor1_forward(MOTOR1_PWM(speed));                   pwm_motor2_forward(MOTOR2_PWM(speed));
-    pwm_motor3_forward(MOTOR3_PWM(speed / TURN_SLOW_RATIO)); pwm_motor4_forward(MOTOR4_PWM(speed / TURN_SLOW_RATIO));
+    /* 右侧全速，左侧慢 → 右转 */
+    pwm_motor1_forward(MOTOR1_PWM(speed / TURN_SLOW_RATIO)); pwm_motor2_forward(MOTOR2_PWM(speed / TURN_SLOW_RATIO));
+    pwm_motor3_forward(MOTOR3_PWM(speed));                   pwm_motor4_forward(MOTOR4_PWM(speed));
 }
 
 void pwm_car_rotate_left(int16_t speed)

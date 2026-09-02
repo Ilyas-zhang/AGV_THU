@@ -30,6 +30,9 @@
 #include "test_ultrasonic.h"
 #include "test_obstacle.h"
 #include "test_ir_avoid.h"
+#include "ir_avoid.h"
+#include "ir_remote.h"
+#include "test_ir_remote.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -197,11 +200,14 @@ void SysTick_Handler(void)
   /* USER CODE BEGIN SysTick_IRQn 1 */
   LED_Tick();
   Key_Tick();
+  // IRAvoid_Tick();               /* 红外避障滤波 1 kHz */
   // TestBuzz_Tick();
   // TestMotor_Tick();
   // TestUltrasonic_Tick();
-  TestObstacle_Tick();         /* 超声避障 */
-  // TestIRAvoid_Tick();       /* 红外避障 — 启用前先关闭 TestObstacle_Tick */
+  // TestObstacle_Tick();           /* 超声避障 */
+  // TestIRAvoid_Tick();           /* 红外避障 */
+  TestIRRemote_Tick();           /* 红外遥控 */
+  // TestMotor_Tick();              /* 电机测试 */
   /* USER CODE END SysTick_IRQn 1 */
 }
 
@@ -215,6 +221,7 @@ void SysTick_Handler(void)
 /* USER CODE BEGIN 1 */
 void EXTI15_10_IRQHandler(void)
 {
+    HAL_GPIO_EXTI_IRQHandler(IRREMOTE_Pin);
     HAL_GPIO_EXTI_IRQHandler(SonicEcho_Pin);
 }
 
@@ -222,6 +229,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == SonicEcho_Pin) {
         Ultrasonic_EXTI_Handler();
+    } else if (GPIO_Pin == IRREMOTE_Pin) {
+        IRRemote_EXTI_Handler();
     }
 }
 /* USER CODE END 1 */

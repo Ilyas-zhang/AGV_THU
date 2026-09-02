@@ -38,6 +38,8 @@
 #include "test_ultrasonic.h"
 #include "test_obstacle.h"
 #include "test_ir_avoid.h"
+#include "ir_remote.h"
+#include "test_ir_remote.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -113,8 +115,10 @@ int main(void)
   Ultrasonic_Init();
   OLED_Init();
   // TestUltrasonic_Init();   /* 纯测距显示，避障测试时关闭 */
-  TestObstacle_Init();        /* 超声避障（当前启用） */
+  // TestObstacle_Init();      /* 超声避障 */
   // TestIRAvoid_Init();      /* 红外避障 — 启用前先关闭 TestObstacle，避免抢电机 */
+  TestIRRemote_Init();        /* 红外遥控 */
+  // TestMotor_Init();           /* 电机测试 */
   // TestBuzz_Init();
   // TestMotor_Init();
   /* USER CODE END 2 */

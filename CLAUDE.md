@@ -107,5 +107,24 @@ GPIO, CORTEX, DMA, FLASH, EXTI, PWR, RCC, TIM1, TIM8
 - IRTracking_Read() / IRTracking_ReadAll() / IRTracking_Follow(speed)
 - 循迹逻辑：8 种传感器状态 → 差速转向（直行/小转/大转/原地旋/脱线处理）
 
+### ✅ 实验8：超声避障 — 已完成
+- `obstacle_avoid.c`/`.h`：状态机 (FORWARD→SLOW→STOP→BACKUP→TURN→FORWARD)
+- 阈值: WARN 30cm, STOP 15cm, SAFE 40cm
+
+### ✅ 实验9：红外避障 — 已完成
+- `ir_avoid.c`/`.h`：PE5/PE6 发射, PF9/PF10 接收 (active-low)
+- 非对称去抖滤波: 左侧基准(L_RELEASE=1), 右侧慢释放(R_RELEASE=10)
+- `IRAvoid_Tick()` 需在 SysTick 1kHz 驱动
+
+### ✅ 实验10：红外遥控 + 遥控车 — 已完成
+- `ir_remote.c`/`.h`：NEC 协议, PG11 接收, 非阻塞 DWT+EXTI 下降沿解码
+- `test_ir_remote.c`：遥控车逻辑 (急停/前后/左右转/旋转90°/调速/蜂鸣/灯光)
+- PWM 调速: 默认 2100, 步进 10, 范围 600~3600
+- 左右转松手自动停 (150ms timeout), 调速立刻生效
+
+### ⚠️ 已知修正
+- 左右转方向：物理接线与代码假设相反，已在 motor.c 中交换 turn_left/turn_right 差速逻辑
+- PG11(红外遥控) 与 PF12(超声) 共享 EXTI15_10_IRQn，handler 需分发两个 pin
+
 ### ⚠️ CubeMX 重生成注意
 - CMakeLists.txt 首行缺 `#` 注释符，每次重生成后需手动添加

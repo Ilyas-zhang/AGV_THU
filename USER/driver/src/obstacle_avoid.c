@@ -110,6 +110,11 @@ void ObstacleAvoid_Init(void)
     last_dist   = 0;
     fwd_speed   = OA_FORWARD_SPEED;
     slow_speed  = OA_SLOW_SPEED;
+
+    /* Start moving forward immediately — don't wait for first echo */
+    pwm_car_forward(fwd_speed);
+    LED_Set(LED_PRESET_FORWARD);
+    Buzz_Off();
 }
 
 void ObstacleAvoid_Tick(void)
@@ -130,10 +135,8 @@ void ObstacleAvoid_Tick(void)
                 enter_stop();
             } else if (last_dist > 0 && last_dist <= OA_WARN_DIST_MM) {
                 enter_slow();
-            } else {
-                /* Open path (0 or > WARN) — keep going */
-                pwm_car_forward(fwd_speed);
             }
+            /* else: open path — motor already running from Init or last tick */
             break;
 
         case OA_SLOW:
@@ -141,10 +144,8 @@ void ObstacleAvoid_Tick(void)
                 enter_stop();
             } else if (last_dist >= OA_SAFE_DIST_MM) {
                 enter_forward();
-            } else {
-                /* Still in slow zone */
-                pwm_car_forward(slow_speed);
             }
+            /* else: still in slow zone — motor already running */
             break;
 
         case OA_STOP:

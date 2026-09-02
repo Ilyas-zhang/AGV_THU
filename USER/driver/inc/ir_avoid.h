@@ -24,6 +24,27 @@
 #define IRAVOID_R_GPIO_Port    GPIOF
 #define IRAVOID_R_Pin         GPIO_PIN_10
 
+/* ---- Asymmetric debounce filter ---- */
+
+/**
+ * IR sensors can get "stuck HIGH" after detecting an obstacle — the
+ * receiver doesn't release even after the obstacle leaves.
+ *
+ * Solution: asymmetric debounce in software.
+ *   - Trigger  (obstacle appears): immediate, 1 raw read.
+ *   - Release  (obstacle clears) : requires N consecutive clear reads
+ *     before we declare the path clear. This filters out the stuck-high
+ *     glitch while still responding to genuine clearance.
+ *
+ * Left  is the baseline (release after 1 clear read = immediate).
+ * Right needs IRAVOID_R_RELEASE consecutive clear reads (10 ms at 1 kHz tick).
+ *
+ * IRAvoid_Tick() must be called every 1 ms from SysTick to drive the filter.
+ */
+
+#define IRAVOID_L_RELEASE     1     /* Left:  baseline — immediate release */
+#define IRAVOID_R_RELEASE    10     /* Right: need 10 consecutive clear reads to release */
+
 /* ---- Initialization / shutdown ---- */
 
 /**
@@ -36,6 +57,12 @@ void IRAvoid_Init(void);
  * @brief  De-initialize: turn off emitters, reset receiver pins to analog.
  */
 void IRAvoid_DeInit(void);
+
+/**
+ * @brief  1 ms tick — call from SysTick.
+ *         Samples raw GPIO and updates the asymmetric debounce filter.
+ */
+void IRAvoid_Tick(void);
 
 /* ---- Sensor read ---- */
 
