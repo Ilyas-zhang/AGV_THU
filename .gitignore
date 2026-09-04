@@ -19,6 +19,10 @@ build/
 *.d
 *.su
 
+# Firmware release directory (tracks hex for sharing)
+!firmware/
+!firmware/*.hex
+
 # CubeMX template (regenerated, our CMakeLists.txt is the working copy)
 CMakeLists_template.txt
 
