@@ -23,6 +23,7 @@ static char    rx_buf[K210_RX_BUF_SIZE + 1];  /* +1 for null terminator */
 static uint8_t rx_index   = 0;     /* 当前写入位置 */
 static uint8_t rx_flag    = 0;     /* 1 = 帧起始 '$' 已收到，正在接收 */
 static volatile uint8_t msg_ready = 0;   /* 1 = 完整帧已就绪 */
+volatile uint16_t k210_rx_byte_cnt = 0;  /* DEBUG: 收到的总字节数 */
 
 /* ========== 初始化 ========== */
 
@@ -70,6 +71,7 @@ void K210Comm_IRQHandler(void)
     /* 读取接收到的字节 */
     if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_RXNE) == RESET) return;
     ch = (uint8_t)(huart2.Instance->DR & 0xFF);
+    k210_rx_byte_cnt++;  /* DEBUG */
 
     if (ch == '$') {
         /* 帧起始：清空缓冲，开始接收 */

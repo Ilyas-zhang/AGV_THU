@@ -1,10 +1,9 @@
 /*
- * ultrasonic_overtake.h — Ultrasonic obstacle overtaking driver
+ * ultrasonic_overtake.h — Ultrasonic-triggered overtaking driver
  *
- * State-machine driven overtaking behavior:
- *   FORWARD → STOP(1s) → LEFT_SHIFT → PASS → RIGHT_SHIFT → FORWARD
+ * Thin wrapper: uses ultrasonic distance to decide when to trigger
+ * the generic Overtake maneuver. All maneuver logic is in overtake.c.
  *
- * Uses the existing non-blocking Ultrasonic_* API (DWT + EXTI).
  * Call UltrasonicOvertake_Tick() from SysTick every 1 ms.
  */
 
@@ -17,29 +16,32 @@
 /* ---- Initialization ---- */
 
 /**
- * @brief  Initialize overtaking state machine.
- *         Resets state to FORWARD, clears timers.
+ * @brief  Initialize ultrasonic overtaking.
+ *         Resets overtake state machine, starts driving forward.
  *         Does NOT call Ultrasonic_Init() — caller must do that.
  */
 void UltrasonicOvertake_Init(void);
 
 /**
- * @brief  1 ms tick handler — call from SysTick.
- *         Periodically triggers ultrasonic measurement and
- *         drives the overtaking state machine.
+ * @brief  1 ms tick — call from SysTick.
+ *         Triggers ultrasonic, checks distance, delegates to Overtake driver.
  */
 void UltrasonicOvertake_Tick(void);
 
 /**
  * @brief  Get current state name string (for display).
- * @retval Short state name: "FWD", "STOP", "LSFT", "PASS", "RSFT"
+ *         Returns overtake state name if maneuver active, "FWD" otherwise.
  */
 const char *UltrasonicOvertake_GetStateName(void);
 
 /**
  * @brief  Get current distance in mm (last ultrasonic reading).
- * @retval Distance in mm, 0 = no echo / out of range.
  */
 uint16_t UltrasonicOvertake_GetDistance(void);
+
+/**
+ * @brief  Get in-state timer value (ms) for debug display.
+ */
+uint16_t UltrasonicOvertake_GetTimer(void);
 
 #endif /* __ULTRASONIC_OVERTAKE_H */

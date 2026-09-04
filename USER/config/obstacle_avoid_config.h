@@ -24,10 +24,10 @@
 #define OA_TRIGGER_MS            60      /* 触发间隔 ms */
 
 /* ---- 速度 (0~3599) ---- */
-#define OA_FORWARD_SPEED         1800    /* 前进速度 */
-#define OA_SLOW_SPEED            900     /* 减速速度 */
-#define OA_BACKUP_SPEED          900     /* 后退速度 */
-#define OA_TURN_SPEED            900     /* 转向速度 */
+#define OA_FORWARD_SPEED         2300    /* 前进速度 */
+#define OA_SLOW_SPEED            2100    /* 减速速度 */
+#define OA_BACKUP_SPEED          2100    /* 后退速度 */
+#define OA_TURN_SPEED            2100    /* 转向速度 */
 
 /* ---- 转向方向 ---- */
 #define OA_TURN_DIR              1       /* 1=右旋, -1=左旋 */

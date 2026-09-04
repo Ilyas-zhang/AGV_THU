@@ -143,7 +143,7 @@ int main(void)
   // TestLineFollow_Init();        /* 循迹测试 */
   // TestIRRemote_Init();           /* 红外遥控 */
   K210Comm_Init();              /* K210通讯 */
-  TestK210Comm_Init();          /* K210通讯测试 */
+  TestK210Comm_Init();          /* K210路牌识别测试 */
   // TestBuzz_Init();
   // TestMotor_Init();
   /* USER CODE END 2 */

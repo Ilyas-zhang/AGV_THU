@@ -28,3 +28,6 @@ CMakeLists_template.txt
 
 # Claude Code session data
 .claude/
+
+# K210 vendor docs and models (too large for repo)
+sources/

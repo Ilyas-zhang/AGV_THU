@@ -212,7 +212,7 @@ void SysTick_Handler(void)
   Key_Tick();
   IRTracking_Tick();              /* 循迹传感器滤波 1 kHz */
   Encoder_Tick();
-  // IRAvoid_Tick();               /* 红外避障滤波 1 kHz */
+  IRAvoid_Tick();               /* 红外避障滤波 1 kHz */
   // TestBuzz_Tick();
   // TestMotor_Tick();
   // TestUltrasonic_Tick();
@@ -224,7 +224,7 @@ void SysTick_Handler(void)
   // TestEncoder_Tick();             /* 编码器测试 */
   // TestLineFollow_Tick();           /* 循迹测试 */
   // TestIRRemote_Tick();           /* 红外遥控 */
-  TestK210Comm_Tick();              /* K210通讯测试 */
+  TestK210Comm_Tick();              /* K210路牌识别测试 */
   // TestMotor_Tick();              /* 电机测试 */
   /* USER CODE END SysTick_IRQn 1 */
 }

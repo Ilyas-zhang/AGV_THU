@@ -26,6 +26,8 @@ cmake --build build
 
 **⚠️ CubeMX 重生成后**：CMakeLists.txt 首行缺 `#` 注释符，需手动添加。
 
+CMake uses `file(GLOB_RECURSE SOURCES "Core/*.*" "Drivers/*.*" "USER/*.*")` — new files under `USER/` are auto-discovered; no manual source list to update.
+
 Post-build produces `AGV_THU.elf`, `.hex`, and `.bin` in the build directory.
 
 ## Flash / Debug
@@ -55,6 +57,12 @@ USER/
     test_tasks/
       inc/      Test task headers
       src/      Test task implementations (init + tick + main-loop body)
+    vision_tasks/
+      sign_detect.py  K210 自学习路牌识别 (MicroPython)
+sources/
+  main.py               K210 路牌识别 + SD卡日志 + 训练拍照 (MicroPython)
+  K210视觉模块/         K210 官方教程文档 + 例程 (PDF/Py/固件)
+  KPU/                  预训练 .kmodel 文件 (需复制到 K210 SD 卡 /sd/KPU/)
 ```
 
 ### Design Patterns
@@ -67,13 +75,20 @@ USER/
 
 4. **EXTI dispatch**: PG11 (IR remote) and PF12 (ultrasonic echo) share `EXTI15_10_IRQn`. The custom `EXTI15_10_IRQHandler` calls both `HAL_GPIO_EXTI_IRQHandler`, and `HAL_GPIO_EXTI_Callback` dispatches by pin to `Ultrasonic_EXTI_Handler` or `IRRemote_EXTI_Handler`.
 
-5. **CubeMX-lost pin defines**: Some pin labels (e.g. `LRGB_R_Pin` on PG1) are lost on CubeMX regeneration. They are manually redefined in `USER CODE BEGIN Private defines` in `main.h`.
+5. **USART2 IRQ dispatch**: `USART2_IRQHandler` calls `K210Comm_IRQHandler()` before `HAL_UART_IRQHandler()`. The K210 driver uses RXNE interrupt to parse `$payload#` frames byte-by-byte. Note: `test_k210_comm.c` disables RXNE and does its own polling frame parser instead — the two approaches are mutually exclusive per test.
 
-6. **Motor correction**: `motor_config.h` provides per-motor correction factors (`MOTORx_CORR`), reverse flags (`MOTORx_REVERSE`), and PWM macros. `pwm_car_*` functions apply corrections internally; single-motor functions need `MOTORx_PWM(speed)` wrapper.
+6. **CubeMX-lost pin defines**: Some pin labels (e.g. `LRGB_R_Pin` on PG1) are lost on CubeMX regeneration. They are manually redefined in `USER CODE BEGIN Private defines` in `main.h`.
 
-7. **Asymmetric debounce**: Recurring idiom across all sensor drivers (IR tracking, IR avoid): trigger (obstacle/line detected) is immediate, release requires N consecutive clear reads. This prevents "stuck" receiver outputs. Configurable via `IRTRACK_RELEASE`, `IRAVOID_L_RELEASE`, `IRAVOID_R_RELEASE` in their respective config headers.
+7. **Motor correction**: `motor_config.h` provides per-motor correction factors (`MOTORx_CORR`), reverse flags (`MOTORx_REVERSE`), and PWM macros. `pwm_car_*` functions apply corrections internally; single-motor functions need `MOTORx_PWM(speed)` wrapper.
 
-8. **CubeMX pin remap overrides**: TIM3 encoder is wired to PB4/PB5 but CubeMX configures PA6/PA7. Fixed at runtime inside `USER CODE TIM3_MspInit 1` in `tim.c` via `__HAL_AFIO_REMAP_TIM3_PARTIAL()`. TIM1 motor PWM remap (`__HAL_AFIO_REMAP_TIM1_ENABLE()`) is similarly handled in `HAL_TIM_MspPostInit`.
+8. **Asymmetric debounce**: Recurring idiom across all sensor drivers (IR tracking, IR avoid): trigger (obstacle/line detected) is immediate, release requires N consecutive clear reads. This prevents "stuck" receiver outputs. Configurable via `IRTRACK_RELEASE`, `IRAVOID_L_RELEASE`, `IRAVOID_R_RELEASE` in their respective config headers.
+
+9. **Overtake driver composition**: `overtake.c` is a generic overtaking state machine (STOP → ROTATE_1 → PASS → ROTATE_2 → IDLE). Higher-level drivers compose it:
+   - `ultrasonic_overtake.c` — triggers overtake when ultrasonic distance ≤ threshold
+   - `ir_avoid_drive.c` — triggers overtake based on IR avoid sensor readings (left obstacle → right overtake, right obstacle → left overtake)
+   - Both delegate all maneuver logic to `overtake.c`; their configs only cover sensor-specific parameters, while maneuver timing/speed lives in `overtake_config.h`.
+
+10. **CubeMX pin remap overrides**: TIM3 encoder is wired to PB4/PB5 but CubeMX configures PA6/PA7. Fixed at runtime inside `USER CODE TIM3_MspInit 1` in `tim.c` via `__HAL_AFIO_REMAP_TIM3_PARTIAL()`. TIM1 motor PWM remap (`__HAL_AFIO_REMAP_TIM1_ENABLE()`) is similarly handled in `HAL_TIM_MspPostInit`. USART2 remap to PD5/PD6 is now configured directly in the `.ioc` (CubeMX generates the `__HAL_AFIO_REMAP_USART2_ENABLE()` call and PD4/PD5/PD6 GPIO init); the `USER CODE USART2_MspInit 1` block in `usart.c` is empty.
 
 ### Peripheral / Timer Mapping
 
@@ -86,7 +101,7 @@ USER/
 | TIM4 CH1-2 | PD12/PD13 | Encoder 1 |
 | TIM5 CH1-2 | PA0/PA1 | Encoder 3 |
 | I2C1 | PB6(SCL)/PB7(SDA) | SSD1306 OLED (addr 0x3C) |
-| USART2 | PA2(TX)/PA3(RX) | K210 communication (115200 8N1) |
+| USART2 | PD5(TX)/PD6(RX) (remap) | K210 communication (115200 8N1) |
 | EXTI15_10 | PG11 + PF12 | IR remote + Ultrasonic echo (shared IRQ) |
 
 ### GPIO Pin Map
@@ -99,8 +114,8 @@ USER/
 | PE7 | LRGB_G_Pin | Output | Left RGB — Green |
 | PG1 | LRGB_R_Pin | Output | Left RGB — Red *(manual define)* |
 | PG2 | LRGB_B_Pin | Output | Left RGB — Blue |
-| PE5 | left_infrared_Pin | Output | IR avoid left emitter |
-| PE6 | right_infrared_Pin | Output | IR avoid right emitter |
+| PE5 | left_infrared_Pin | Output | IR avoid left emitter (active-LOW) |
+| PE6 | right_infrared_Pin | Output | IR avoid right emitter (active-LOW) |
 | PF9 | — *(manual)* | Input | IR avoid left receiver (active-low) |
 | PF10 | — *(manual)* | Input | IR avoid right receiver (active-low) |
 | PF11 | SonicTrig_Pin | Output | HC-SR04 trigger |
@@ -129,6 +144,7 @@ GPIO, CORTEX, DMA, FLASH, EXTI, PWR, RCC, TIM, I2C, UART
 - Cross-compiler flags in `CMakeLists.txt`; CPU is `-mcpu=cortex-m3 -mthumb`
 - All drivers are non-blocking: ISR timestamps edges / samples GPIO, heavy work in Tick from SysTick
 - Config parameters go in `USER/config/*_config.h`, never hardcoded in drivers
+- New `.c`/`.h` files under `USER/` are auto-discovered by CMake GLOB_RECURSE — no need to edit CMakeLists.txt
 
 ## Enabling / Disabling Experiments
 
@@ -170,6 +186,17 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - `ir_avoid.c`: PE5/PE6 发射, PF9/PF10 接收 (active-low)
 - 非对称去抖滤波: 左侧即时释放, 右侧慢释放(R_RELEASE=10)
 
+### ✅ 实验9+：红外避障驾驶（Overtake 版）
+- `ir_avoid_drive.c`: 基于 Overtake 驱动的避障驾驶
+  - 仅左障碍 → 右超车，仅右障碍 → 左超车，双侧 → 左超车，无障碍 → 前进
+- `overtake.c`: 通用超车机动状态机 STOP → ROTATE_1 → PASS → ROTATE_2 → IDLE
+- 参数: `overtake_config.h` (时间/速度/方向), `ir_avoid_drive_config.h` (前进速度/双侧方向)
+
+### ✅ 实验8+：超声超车避障（Overtake 版）
+- `ultrasonic_overtake.c`: 超声测距触发 Overtake 驱动
+  - 距离 ≤ 15cm → 触发左超车，超车完成 200ms 保护期不重触发
+- 参数: `ultrasonic_overtake_config.h` (距离阈值/触发间隔/保护期), `overtake_config.h` (机动参数)
+
 ### ✅ 实验10：红外遥控 + 遥控车
 - `ir_remote.c`: NEC 协议, PG11 接收, 非阻塞 DWT+EXTI 下降沿解码
 - `test_ir_remote.c`: 遥控车逻辑 (急停/前后/左右转/旋转90°/调速/蜂鸣/灯光)
@@ -180,15 +207,33 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - `encoder.c`: 四路正交编码器, delta/total/speed 接口
 - 电机参数: PPR=13, 减速比=30, 倍频=x2, 每转=780 counts
 
-### 🔧 K210 通讯（开发中）
-- USART2, $payload# 帧格式, 中断接收 + 轮询发送
+### ✅ K210 通讯 + 路牌识别
+- USART2 重映射到 PD5(TX)/PD6(RX)（PA3 物理损坏）
+- `$payload#` 帧格式
+- **中断接收** (`k210_comm.c`): USART2 RXNE 中断逐字节解析帧，`K210Comm_IRQHandler()` 在 `USART2_IRQHandler` 中调用
+- **轮询接收** (`test_k210_comm.c`): 禁用 RXNE，SysTick 中轮询 SR 寄存器读字节解析帧
+- K210 → STM32: `$R#`/`$L#`/`$S#`/`$H#`/`$1#`/`$2#` 路牌指令 (RIGHT/LEFT/STOP/HORN/ROOM1/ROOM2)，`$a#` 心跳回复 (ALIVE)
+- STM32 → K210: `$alive#` 心跳
+- K210 端脚本:
+  - `USER/task/vision_tasks/sign_detect.py` — 自学习分类器 (mb-0.25.kmodel), 3 类 (RIGHT/LEFT/STOP), 连续 STABLE_FRAMES 帧确认后发送, REARM_FRAMES 帧后重触发
+  - `sources/main.py` — 同上 + SD卡训练拍照保存 + 运行日志 + UART 连通测试启动画面
+  - KPU 模型 `sources/KPU/self_learn_classifier/mb-0.25.kmodel` 需复制到 K210 TF 卡 `/sd/KPU/` 目录
+  - K210 UART1: TX=IO8, RX=IO6, 115200 8N1
+- OLED 显示路牌结果
 
 ## ⚠️ 已知修正
 
 - 左右转方向：物理接线与代码假设相反，已在 motor.c 中交换 turn_left/turn_right 差速逻辑
+- Overtake 旋转方向：物理接线反向，`do_rotate_left()` 调用 `pwm_car_rotate_right()`，`do_rotate_right()` 调用 `pwm_car_rotate_left()`
 - PG11(红外遥控) 与 PF12(超声) 共享 EXTI15_10_IRQn，handler 需分发两个 pin
 - LRGB_R_Pin (PG1) 标签在 CubeMX 重生成后丢失，需在 main.h `USER CODE BEGIN Private defines` 中手动补回
 - TIM3 编码器引脚：CubeMX 配为 PA6/PA7，实际接线 PB4/PB5，tim.c 中 USER CODE 块做 partial remap 修正
 - OLED 实际 128×32 面板（`OLED_HEIGHT 32`），但 oled.h 注释误写 128×64
 - Ultrasonic 和 IR remote 共用 DWT CYCCNT；`IRRemote_Init()` 检测计数器已启用则跳过重置，避免冲突
 - Motor3/4 和 Encoder1/2 物理接线反转，由 `MOTOR3_REVERSE=1`/`MOTOR4_REVERSE=1`/`ENCODER1_REVERSE=1`/`ENCODER2_REVERSE=1` 在 config 中逻辑反转
+- PA3 (USART2_RX) 物理损坏：USART2 已通过 AFIO 重映射到 PD5(TX)/PD6(RX)。`.ioc` 已配置 PD4(RTS)/PD5(TX)/PD6(RX) + `__HAL_AFIO_REMAP_USART2_ENABLE()`，CubeMX 生成代码直接处理，USER CODE 块为空。K210 接线必须连到 PD5/PD6。
+- `test_k210_comm.c` 禁用 RXNE 中断做轮询接收，与 `k210_comm.c` 中断接收互斥。如果其他代码需要中断接收帧，不能同时启用 test_k210_comm。
+- `overtake.h` 注释称状态名为 `"RL"/"RR"`，但 `Overtake_GetStateName()` 实际返回 `"ROT1"/"ROT2"`
+- CMakeLists.txt `include_directories` 含两个不存在的路径 `USER/test/Inc` 和 `USER/project`（CubeMX 重生成残留，不影响编译但应清理）
+- `ultrasonic_speed.c/h`：超声测速驱动（Δdistance/Δtime + EMA 滤波），已存在但未被任何 test task 使用
+- IR avoid emitters 为 active-LOW：`IRAvoid_EmitterOn()` 写 `GPIO_PIN_RESET`，`EmitterOff()` 写 `GPIO_PIN_SET`

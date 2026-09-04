@@ -1,11 +1,11 @@
 /*
  * test_ultrasonic_overtake.c — Ultrasonic overtaking test with OLED display
  *
- * Drives the overtaking state machine and displays distance + state on OLED.
+ * Drives the overtaking state machine and displays distance + state + timer on OLED.
  *
  * OLED 128×32, Font_7x10 layout:
  *   Line 0: "D:xxxcm S:FWD   "
- *   Line 1: "STP:15 OVT:LEFT "
+ *   Line 1: "T:xxxx STP:15   "  (in-state timer + stop threshold)
  */
 
 #include "test_ultrasonic_overtake.h"
@@ -13,7 +13,7 @@
 #include "ultrasonic.h"
 #include "oled.h"
 
-#define UO_OLED_REFRESH    100     /* OLED refresh interval ms */
+#define UO_OLED_REFRESH    50      /* OLED refresh interval ms (faster for debug) */
 
 static uint16_t disp_cnt = 0;
 
@@ -36,9 +36,9 @@ void TestUltrasonicOvertake_Init(void)
     /* Initial OLED display */
     OLED_Clear();
     OLED_GotoXY(0, 0);
-    OLED_Puts("D:--cm S:---  ", &Font_7x10, OLED_COLOR_WHITE);
+    OLED_Puts("D:--cm S:---    ", &Font_7x10, OLED_COLOR_WHITE);
     OLED_GotoXY(0, 10);
-    OLED_Puts("STP:15 OVT:LEFT", &Font_7x10, OLED_COLOR_WHITE);
+    OLED_Puts("T:---- STP:15  ", &Font_7x10, OLED_COLOR_WHITE);
     OLED_Update();
 }
 
@@ -52,6 +52,7 @@ void TestUltrasonicOvertake_Tick(void)
 
     uint16_t dist_cm = (UltrasonicOvertake_GetDistance() + 5) / 10;
     const char *state_name = UltrasonicOvertake_GetStateName();
+    uint16_t timer_val = UltrasonicOvertake_GetTimer();
 
     OLED_Clear();
 
@@ -62,9 +63,11 @@ void TestUltrasonicOvertake_Tick(void)
     OLED_Puts("cm S:", &Font_7x10, OLED_COLOR_WHITE);
     OLED_Puts(state_name, &Font_7x10, OLED_COLOR_WHITE);
 
-    /* Line 1: "STP:15 OVT:LEFT " */
+    /* Line 1: "T:xxxx STP:15   " (timer debug) */
     OLED_GotoXY(0, 10);
-    OLED_Puts("STP:15 OVT:LEFT", &Font_7x10, OLED_COLOR_WHITE);
+    OLED_Puts("T:", &Font_7x10, OLED_COLOR_WHITE);
+    put_uint16(timer_val, &Font_7x10, OLED_COLOR_WHITE);
+    OLED_Puts(" STP:15", &Font_7x10, OLED_COLOR_WHITE);
 
     OLED_Update();
 }

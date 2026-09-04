@@ -5,15 +5,12 @@
  *   Left:  emitter PE5 (left_infrared), receiver PF9
  *   Right: emitter PE6 (right_infrared), receiver PF10
  *
+ * Emitter active-LOW: PE5/PE6 = LOW → emitter ON, HIGH → emitter OFF
+ *
  * Active-low convention: receiver LOW = obstacle detected.
  * IRAvoid_ReadLeft/Right() return 1 for obstacle.
  *
- * Asymmetric debounce filter (driven by IRAvoid_Tick @ 1 kHz):
- *   - Trigger (obstacle appears): immediate — 1 raw read.
- *   - Release (obstacle clears) : requires N consecutive clear reads
- *     (L_RELEASE=1 for baseline, R_RELEASE=10 for right side).
- *   This prevents the "stuck HIGH" problem where the IR receiver
- *   doesn't release after the obstacle leaves.
+ * Asymmetric debounce filter (driven by IRAvoid_Tick @ 1 kHz).
  */
 
 #include "ir_avoid.h"
@@ -37,7 +34,7 @@ void IRAvoid_Init(void)
     GPIO_InitStruct.Pull  = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
 
-    /* Turn on emitters */
+    /* Turn on emitters (active-LOW) */
     IRAvoid_EmitterOn();
 
     /* Reset filter state */
@@ -111,16 +108,16 @@ uint8_t IRAvoid_ReadAll(void)
     return result;
 }
 
-/* ---- Emitter control ---- */
+/* ---- Emitter control (active-LOW) ---- */
 
 void IRAvoid_EmitterOn(void)
 {
-    HAL_GPIO_WritePin(left_infrared_GPIO_Port, left_infrared_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(right_infrared_GPIO_Port, right_infrared_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(left_infrared_GPIO_Port, left_infrared_Pin, GPIO_PIN_RESET);  /* LOW = ON */
+    HAL_GPIO_WritePin(right_infrared_GPIO_Port, right_infrared_Pin, GPIO_PIN_RESET);
 }
 
 void IRAvoid_EmitterOff(void)
 {
-    HAL_GPIO_WritePin(left_infrared_GPIO_Port, left_infrared_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(right_infrared_GPIO_Port, right_infrared_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(left_infrared_GPIO_Port, left_infrared_Pin, GPIO_PIN_SET);    /* HIGH = OFF */
+    HAL_GPIO_WritePin(right_infrared_GPIO_Port, right_infrared_Pin, GPIO_PIN_SET);
 }

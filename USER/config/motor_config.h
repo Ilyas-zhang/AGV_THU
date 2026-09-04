@@ -20,7 +20,7 @@
  */
 
 /* ---- 基础速度 ---- */
-#define MOTOR_BASE_SPEED     1800   /* 默认基础速度 0~3599 (50% 占空比) */
+#define MOTOR_BASE_SPEED     2300   /* 默认基础速度 0~3599 (~64% 占空比) */
 #define MOTOR_MAX_SPEED      3599   /* PWM ARR 最大值 */
 
 /* ---- 各电机校正系数（百分比，100 = 无校正） ---- */

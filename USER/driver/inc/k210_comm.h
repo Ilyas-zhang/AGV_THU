@@ -76,4 +76,7 @@ const char *K210Comm_GetMessage(void);
  */
 void K210Comm_ClearFlag(void);
 
+/* ---- DEBUG ---- */
+extern volatile uint16_t k210_rx_byte_cnt;  /* USART2 收到的总字节数 */
+
 #endif /* __K210_COMM_H */
