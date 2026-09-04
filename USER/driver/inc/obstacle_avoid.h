@@ -12,25 +12,7 @@
 #define __OBSTACLE_AVOID_H
 
 #include <stdint.h>
-
-/* ===== 可调阈值配置 ===== */
-
-#define OA_WARN_DIST_MM     300    /* 减速阈值 30 cm */
-#define OA_STOP_DIST_MM     150    /* 停车阈值 15 cm */
-#define OA_SAFE_DIST_MM     400    /* 恢复全速阈值 40 cm */
-
-#define OA_BACKUP_MS        800    /* 后退持续时间 ms */
-#define OA_TURN_MS          600    /* 转向持续时间 ms */
-#define OA_STOP_DELAY_MS    500    /* 停车后停留时间 ms */
-
-#define OA_TRIGGER_MS       60     /* 超声触发间隔 ms */
-
-#define OA_FORWARD_SPEED    1800   /* 默认前进速度 0~3599 */
-#define OA_SLOW_SPEED       900    /* 默认减速速度 */
-#define OA_BACKUP_SPEED     900    /* 默认后退速度 */
-#define OA_TURN_SPEED       900    /* 默认转向速度 */
-
-#define OA_TURN_DIR         1      /* 1 = 右旋, -1 = 左旋 */
+#include "obstacle_avoid_config.h"
 
 /* ===== API ===== */
 

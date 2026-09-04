@@ -147,7 +147,7 @@ void IRRemote_EXTI_Handler(void)
         if (state == IR_RECEIVING) {
             frame_data <<= 1;
             frame_data  |= cls;   /* cls is 0 or 1 */
-            if (++bit_count >= 32) {
+            if (++bit_count >= NEC_FRAME_BITS) {
                 /* Full frame received — validate NEC checksum */
                 uint8_t addr     = (uint8_t)(frame_data >> 24);
                 uint8_t addr_inv = (uint8_t)(frame_data >> 16);

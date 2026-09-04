@@ -7,6 +7,7 @@
  */
 
 #include "ultrasonic_speed.h"
+#include "ultrasonic_config.h"
 #include "main.h"
 
 /* ---- DWT micros (shared with ultrasonic.c, already initialized) ---- */
@@ -49,8 +50,8 @@ void UltrasonicSpeed_Update(uint16_t distance_mm)
 
     uint32_t dt_us = now_us - prev_time_us;
 
-    if (dt_us < 1000) {
-        /* Too fast (< 1 ms) — ignore, likely noise */
+    if (dt_us < ULTRASONIC_SPEED_MIN_DT) {
+        /* Too fast (< min Δt) — ignore, likely noise */
         return;
     }
 
@@ -73,8 +74,11 @@ void UltrasonicSpeed_Update(uint16_t distance_mm)
 
     speed_raw_cm_s = (int16_t)speed_cm_s;
 
-    /* EMA filter: α = 0.25 → speed_ema = (raw + 3 * ema_prev) / 4 */
-    speed_ema_cm_s = (speed_raw_cm_s + 3 * speed_ema_cm_s + 2) / 4;
+    /* EMA filter: α = ULTRASONIC_SPEED_ALPHA/100 → speed_ema = (α*raw + (100-α)*ema_prev) / 100
+     * With α=25: speed_ema = (raw + 3*ema_prev) / 4  (equivalent, fewer divisions) */
+    speed_ema_cm_s = (speed_raw_cm_s * ULTRASONIC_SPEED_ALPHA
+                      + speed_ema_cm_s * (100 - ULTRASONIC_SPEED_ALPHA)
+                      + (100 / 2)) / 100;
 
     /* Store for next delta */
     prev_dist_mm = distance_mm;

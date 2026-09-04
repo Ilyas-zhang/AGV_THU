@@ -67,20 +67,18 @@ void Error_Handler(void);
 #define left_infrared_GPIO_Port GPIOE
 #define right_infrared_Pin GPIO_PIN_6
 #define right_infrared_GPIO_Port GPIOE
-#define IR_X1_Pin GPIO_PIN_0
-#define IR_X1_GPIO_Port GPIOF
-#define IR_X2_Pin GPIO_PIN_1
-#define IR_X2_GPIO_Port GPIOF
-#define IR_X3_Pin GPIO_PIN_2
-#define IR_X3_GPIO_Port GPIOF
-#define IR_X4_Pin GPIO_PIN_3
-#define IR_X4_GPIO_Port GPIOF
 #define SonicTrig_Pin GPIO_PIN_11
 #define SonicTrig_GPIO_Port GPIOF
 #define SonicEcho_Pin GPIO_PIN_12
 #define SonicEcho_GPIO_Port GPIOF
-#define LRGB_R_Pin GPIO_PIN_1
-#define LRGB_R_GPIO_Port GPIOG
+#define X1_Pin GPIO_PIN_13
+#define X1_GPIO_Port GPIOF
+#define X2_Pin GPIO_PIN_14
+#define X2_GPIO_Port GPIOF
+#define X3_Pin GPIO_PIN_15
+#define X3_GPIO_Port GPIOF
+#define X4_Pin GPIO_PIN_0
+#define X4_GPIO_Port GPIOG
 #define LRGB_G_Pin GPIO_PIN_7
 #define LRGB_G_GPIO_Port GPIOE
 #define Motor1_IN1_Pin GPIO_PIN_9
@@ -111,7 +109,9 @@ void Error_Handler(void);
 #define Buzzer_GPIO_Port GPIOG
 
 /* USER CODE BEGIN Private defines */
-
+/* CubeMX 重生成后丢失的用户标签，需手动补回 */
+#define LRGB_R_Pin         GPIO_PIN_1
+#define LRGB_R_GPIO_Port   GPIOG
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

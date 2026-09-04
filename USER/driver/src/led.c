@@ -1,4 +1,5 @@
 #include "led.h"
+#include "led_config.h"
 #include "main.h"
 
 /* ---- internal types ---- */
@@ -13,15 +14,11 @@ typedef struct {
 static LED_RGB led_left  = {0, 0, 0, 0};
 static LED_RGB led_right = {0, 0, 0, 0};
 
-static volatile uint8_t  pwm_cnt          = 0;   /* 0~99, software PWM step */
+static volatile uint8_t  pwm_cnt          = 0;   /* software PWM step */
 static volatile uint16_t blink_slow_cnt   = 0;   /* ms counter for slow blink */
 static volatile uint16_t blink_fast_cnt   = 0;   /* ms counter for fast blink */
 static volatile uint8_t  blink_slow_state = 1;   /* 1=on, 0=off (1Hz) */
 static volatile uint8_t  blink_fast_state = 1;   /* 1=on, 0=off (5Hz) */
-
-#define PWM_PERIOD       100   /* 100 steps × 1 ms = 100 Hz PWM  */
-#define BLINK_SLOW_HALF  500   /* 500 ms half-period → 1 Hz blink */
-#define BLINK_FAST_HALF  100   /* 100 ms half-period → 5 Hz blink */
 
 /* ---- clamp helper ---- */
 static inline uint8_t clamp100(uint8_t v)
@@ -69,19 +66,19 @@ void LED_Set(uint8_t l_r, uint8_t l_g, uint8_t l_b, uint8_t l_blink,
 void LED_Tick(void)
 {
     /* ---- slow blink state machine (1 Hz) ---- */
-    if (++blink_slow_cnt >= BLINK_SLOW_HALF) {
+    if (++blink_slow_cnt >= LED_BLINK_SLOW_HALF) {
         blink_slow_cnt = 0;
         blink_slow_state = !blink_slow_state;
     }
 
     /* ---- fast blink state machine (5 Hz) ---- */
-    if (++blink_fast_cnt >= BLINK_FAST_HALF) {
+    if (++blink_fast_cnt >= LED_BLINK_FAST_HALF) {
         blink_fast_cnt = 0;
         blink_fast_state = !blink_fast_state;
     }
 
     /* ---- PWM counter ---- */
-    if (++pwm_cnt >= PWM_PERIOD) {
+    if (++pwm_cnt >= LED_PWM_PERIOD) {
         pwm_cnt = 0;
     }
 

@@ -24,48 +24,94 @@ cmake --build build
 
 **⚠️ CLion CMake Generator**：必须设为 `Ninja`（Settings → Build → CMake → Generator），否则默认 nmake 找不到会报错。
 
+**⚠️ CubeMX 重生成后**：CMakeLists.txt 首行缺 `#` 注释符，需手动添加。
+
 Post-build produces `AGV_THU.elf`, `.hex`, and `.bin` in the build directory.
 
 ## Flash / Debug
 
-OpenOCD with DAPLink (CMSIS-DAP over SWD). No OpenOCD config is committed to this repo — supply your own (adjust `source [find target/stm32f1x.cfg]` and `adapter speed` for the F103 board).
+OpenOCD with DAPLink (CMSIS-DAP over SWD). No OpenOCD config is committed — supply your own (adjust `source [find target/stm32f1x.cfg]` and `adapter speed`).
 
 ## STM32CubeMX Code Generation
 
-The `.ioc` file (`AGV_THU.ioc`) is the CubeMX project. **Regenerating code from it will overwrite everything outside `USER CODE BEGIN` / `USER CODE END` markers.** All user logic must go inside these guarded regions.
+The `.ioc` file (`AGV_THU.ioc`) is the CubeMX project. **Regenerating code from it will overwrite everything outside `USER CODE BEGIN` / `USER CODE END` markers.** All user logic must go inside these guarded regions. After regeneration, manually restore the `#` on CMakeLists.txt line 1.
 
 ## Architecture
 
-Standard STM32CubeMX HAL layout:
+Standard STM32CubeMX HAL layout with user code in `USER/`:
 
-- **Core/Inc/** — Application headers (`main.h`, `gpio.h`, `stm32f1xx_hal_conf.h`, `stm32f1xx_it.h`)
-- **Core/Src/** — Application source (`main.c`, `gpio.c`, `stm32f1xx_it.c`, `stm32f1xx_hal_msp.c`, `system_stm32f1xx.c`, `syscalls.c`, `sysmem.c`)
-- **Core/Startup/** — Reset/startup assembler (`startup_stm32f103zetx.s`)
-- **Drivers/** — STM32F1xx HAL + CMSIS (vendor-provided, do not edit)
-- **USER/test/** — LED driver (`led.c`, `led.h`) + Buzzer/Key driver (`buzz.c`, `buzz.h`)
+```
+Core/
+  Inc/          CubeMX headers (main.h, tim.h, gpio.h, i2c.h, usart.h, ...)
+  Src/          CubeMX sources (main.c, tim.c, gpio.c, stm32f1xx_it.c, ...)
+  Startup/      startup_stm32f103zetx.s
+Drivers/        STM32F1xx HAL + CMSIS (vendor-provided, do not edit)
+USER/
+  config/       *_config.h — tunable parameters for each driver (thresholds, speeds, filter constants)
+  driver/
+    inc/        Driver headers
+    src/        Driver implementations
+  task/
+    test_tasks/
+      inc/      Test task headers
+      src/      Test task implementations (init + tick + main-loop body)
+```
 
-### GPIO Configuration (Current)
+### Design Patterns
+
+1. **Driver / Config separation**: Every driver has a corresponding `*_config.h` in `USER/config/` with all tunable parameters. Drivers `#include` their config. This lets users tune without touching driver code.
+
+2. **Init + Tick pattern**: All drivers expose `Xxx_Init()` and `Xxx_Tick()`. Init is called once in `main()` after CubeMX peripheral init. Tick is called from `SysTick_Handler` every 1 ms for non-blocking periodic work (filtering, state machines, timeouts). The main `while(1)` loop is **empty** — all application logic runs from SysTick ticks and ISR callbacks.
+
+3. **Test tasks**: Each experiment has a `test_xxx.c`/`.h` pair with `TestXxx_Init()` and `TestXxx_Tick()`. Enable an experiment by uncommenting its Init/Tick calls in `main.c` and `stm32f1xx_it.c`. **Only one test task should own the motors at a time** — enabling multiple motor-driving tests simultaneously causes conflicts.
+
+4. **EXTI dispatch**: PG11 (IR remote) and PF12 (ultrasonic echo) share `EXTI15_10_IRQn`. The custom `EXTI15_10_IRQHandler` calls both `HAL_GPIO_EXTI_IRQHandler`, and `HAL_GPIO_EXTI_Callback` dispatches by pin to `Ultrasonic_EXTI_Handler` or `IRRemote_EXTI_Handler`.
+
+5. **CubeMX-lost pin defines**: Some pin labels (e.g. `LRGB_R_Pin` on PG1) are lost on CubeMX regeneration. They are manually redefined in `USER CODE BEGIN Private defines` in `main.h`.
+
+6. **Motor correction**: `motor_config.h` provides per-motor correction factors (`MOTORx_CORR`), reverse flags (`MOTORx_REVERSE`), and PWM macros. `pwm_car_*` functions apply corrections internally; single-motor functions need `MOTORx_PWM(speed)` wrapper.
+
+7. **Asymmetric debounce**: Recurring idiom across all sensor drivers (IR tracking, IR avoid): trigger (obstacle/line detected) is immediate, release requires N consecutive clear reads. This prevents "stuck" receiver outputs. Configurable via `IRTRACK_RELEASE`, `IRAVOID_L_RELEASE`, `IRAVOID_R_RELEASE` in their respective config headers.
+
+8. **CubeMX pin remap overrides**: TIM3 encoder is wired to PB4/PB5 but CubeMX configures PA6/PA7. Fixed at runtime inside `USER CODE TIM3_MspInit 1` in `tim.c` via `__HAL_AFIO_REMAP_TIM3_PARTIAL()`. TIM1 motor PWM remap (`__HAL_AFIO_REMAP_TIM1_ENABLE()`) is similarly handled in `HAL_TIM_MspPostInit`.
+
+### Peripheral / Timer Mapping
+
+| Peripheral | Pins | Function |
+|-----------|------|----------|
+| TIM1 CH1-4 | PE9/PE11/PE13/PE14 (remap) | Motor 1-2 PWM (20 kHz) |
+| TIM8 CH1-4 | PC6/PC7/PC8/PC9 | Motor 3-4 PWM (20 kHz) |
+| TIM2 CH1-2 | PA15/PB3 | Encoder 2 (quadrature, mid-point CNT) |
+| TIM3 CH1-2 | PB4/PB5 (partial remap) | Encoder 4 |
+| TIM4 CH1-2 | PD12/PD13 | Encoder 1 |
+| TIM5 CH1-2 | PA0/PA1 | Encoder 3 |
+| I2C1 | PB6(SCL)/PB7(SDA) | SSD1306 OLED (addr 0x3C) |
+| USART2 | PA2(TX)/PA3(RX) | K210 communication (115200 8N1) |
+| EXTI15_10 | PG11 + PF12 | IR remote + Ultrasonic echo (shared IRQ) |
+
+### GPIO Pin Map
 
 | Port.Pin | CubeMX Name | Direction | Function |
 |----------|-------------|-----------|----------|
-| PE2 | RRGB_R_Pin | Push-Pull Output | Right RGB LED — Red |
-| PE3 | RRGB_G_Pin | Push-Pull Output | Right RGB LED — Green |
-| PE4 | RRGB_B_Pin | Push-Pull Output | Right RGB LED — Blue |
-| PE7 | LRGB_G_Pin | Push-Pull Output | Left RGB LED — Green |
-| PG1 | LRGB_R_Pin | Push-Pull Output | Left RGB LED — Red |
-| PG2 | LRGB_B_Pin | Push-Pull Output | Left RGB LED — Blue |
-| PG3 | KEY1_Pin | Input (no pull) | Key 1 |
-| PG4 | KEY2_Pin | Input (no pull) | Key 2 |
-| PG5 | KEY3_Pin | Input (no pull) | Key 3 |
-| PG12 | Buzzer_Pin | Push-Pull Output | Buzzer |
-| PA13 | — | SWD | SWDIO |
-| PA14 | — | SWD | SWCLK |
-
-### Application Behavior (Current)
-
-- **LED**：`led.c` 提供 `LED_Init()`, `LED_Set(8参数)`, `LED_Tick()`，基于软件 PWM（100Hz SysTick 驱动），支持左右 RGB 独立控制强度(0~100)和闪烁(1Hz)，非阻塞。
-- **Buzzer**：`buzz.c` 提供 `Buzz_Init()`, `Buzz_Tick()`，KEY1 按下开蜂鸣器，KEY2 按下关，20ms 软件防抖，非阻塞。
-- **SysTick**：`LED_Tick()` + `Buzz_Tick()` 每 1ms 调用一次，所有驱动中断驱动，主循环空闲。
+| PE2 | RRGB_R_Pin | Output | Right RGB — Red |
+| PE3 | RRGB_G_Pin | Output | Right RGB — Green |
+| PE4 | RRGB_B_Pin | Output | Right RGB — Blue |
+| PE7 | LRGB_G_Pin | Output | Left RGB — Green |
+| PG1 | LRGB_R_Pin | Output | Left RGB — Red *(manual define)* |
+| PG2 | LRGB_B_Pin | Output | Left RGB — Blue |
+| PE5 | left_infrared_Pin | Output | IR avoid left emitter |
+| PE6 | right_infrared_Pin | Output | IR avoid right emitter |
+| PF9 | — *(manual)* | Input | IR avoid left receiver (active-low) |
+| PF10 | — *(manual)* | Input | IR avoid right receiver (active-low) |
+| PF11 | SonicTrig_Pin | Output | HC-SR04 trigger |
+| PF12 | SonicEcho_Pin | Input EXTI | HC-SR04 echo |
+| PF13/14/15 | X1/X2/X3 | Input | IR tracking sensors (active-low) |
+| PG0 | X4 | Input | IR tracking sensor (active-low) |
+| PG11 | — *(manual)* | Input EXTI | IR remote receiver (NEC, active-low) |
+| PG3 | KEY1_Pin | Input | Key 1 |
+| PG4 | KEY2_Pin | Input | Key 2 |
+| PG5 | KEY3_Pin | Input | Key 3 |
+| PG12 | Buzzer_Pin | Output | Buzzer |
 
 ### Clock Tree
 
@@ -73,58 +119,76 @@ HSE 8 MHz → PLL ×9 → SYSCLK 72 MHz | AHB 72 MHz | APB1 36 MHz | APB2 72 MHz
 
 ### HAL Modules Enabled
 
-GPIO, CORTEX, DMA, FLASH, EXTI, PWR, RCC, TIM1, TIM8
+GPIO, CORTEX, DMA, FLASH, EXTI, PWR, RCC, TIM, I2C, UART
 
 ## Key Conventions
 
 - User code goes **strictly inside** `USER CODE BEGIN` / `USER CODE END` blocks
-- The HAL config controls which HAL modules are compiled. Enable new peripherals via CubeMX
+- The HAL config controls which HAL modules are compiled — enable new peripherals via CubeMX
 - Linker script: `STM32F103ZETX_FLASH.ld` — heap 0x200, stack 0x400
-- Cross-compiler flags are in `CMakeLists.txt`; CPU is `-mcpu=cortex-m3 -mthumb`
+- Cross-compiler flags in `CMakeLists.txt`; CPU is `-mcpu=cortex-m3 -mthumb`
+- All drivers are non-blocking: ISR timestamps edges / samples GPIO, heavy work in Tick from SysTick
+- Config parameters go in `USER/config/*_config.h`, never hardcoded in drivers
 
----
+## Enabling / Disabling Experiments
+
+To switch experiments, edit two files:
+
+1. **`Core/Src/main.c`** — uncomment the desired `TestXxx_Init()` in `USER CODE BEGIN 2`
+2. **`Core/Src/stm32f1xx_it.c`** — uncomment the matching `TestXxx_Tick()` in `SysTick_Handler` (`USER CODE BEGIN SysTick_IRQn 1`)
+
+Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_Tick()`, `Encoder_Tick()`, `IRAvoid_Tick()`).
+
+⚠️ Never enable two motor-driving tests simultaneously (e.g. obstacle avoid + IR remote).
 
 ## 实验进度
 
-### ✅ 实验2：RGB灯闪烁 + 蜂鸣器（已完成）
-- LED 驱动重构为 8 参数 API（RGB 混色 + 闪烁，软件 PWM 100Hz）
-- Buzzer 驱动（KEY1 开 / KEY2 关，20ms 防抖）
+### ✅ 实验2：RGB灯闪烁 + 蜂鸣器
+- LED 驱动: 8 参数 API（RGB 混色 + 闪烁，软件 PWM 100Hz）
+- Buzzer 驱动: KEY1 开 / KEY2 关，20ms 防抖
 - 全部非阻塞，SysTick 中断驱动
 
-### ✅ 实验3：运动控制（基础）— 已完成
-- TIM1（PE9/PE11/PE13/PE14 重映射）+ TIM8（PC6/PC7/PC8/PC9）8 通道 PWM 20KHz
-- `motor.c`/`motor.h`：单电机正转/反转/停止 + 整车前进/后退/左转/右转/左旋/右旋/停止
-- PWM 调速版 `pwm_motor*_forward/backward(speed)`，speed: 0~3599
-- 非 PWM 函数用 CCR=0/ARR 等效实现，无需 GPIO_Output
+### ✅ 实验3：运动控制（基础）
+- TIM1 + TIM8 8 通道 PWM 20KHz
+- `motor.c`: 单电机正/反/停 + 整车前进/后退/左转/右转/旋转/停止
+- PWM 调速版 `pwm_motor*_forward/backward(speed)`, speed: 0~3599
 
-### ✅ 实验4：运动控制（提高）— API 就绪
-- 轨迹调控：组合调用 car_forward/turn_left/turn_right 等 + HAL_Delay 控制时长
-- 变速运动：循环中逐步改变 speed 参数
-- （具体轨迹需根据实验要求在 main.c 中编写）
+### ✅ 实验4：运动控制（提高）
+- 轨迹调控: 组合调用 + HAL_Delay 控制时长
+- 变速运动: 循环中逐步改变 speed 参数
 
-### ✅ 实验5：黑线循迹 — 已完成
-- `irtracking.c`/`irtracking.h`：读取 PF0~PF3 四路循迹传感器
-- IRTracking_Read() / IRTracking_ReadAll() / IRTracking_Follow(speed)
-- 循迹逻辑：8 种传感器状态 → 差速转向（直行/小转/大转/原地旋/脱线处理）
+### ✅ 实验5：黑线循迹
+- `irtracking.c`: PF13/14/15 + PG0 四路循迹传感器，非对称去抖滤波
+- `line_follow.c`: 状态驱动差速转向（直行/小转/大转/原地旋/脱线续行/十字直穿）
+  - ⚠️ 头文件注释描述了加权误差+Kp方案，但实现是离散状态阶梯，`GetError()` 返回 last_dir(-1/0/+1)
 
-### ✅ 实验8：超声避障 — 已完成
-- `obstacle_avoid.c`/`.h`：状态机 (FORWARD→SLOW→STOP→BACKUP→TURN→FORWARD)
+### ✅ 实验8：超声避障
+- `obstacle_avoid.c`: 状态机 FORWARD→SLOW→STOP→BACKUP→TURN→FORWARD
 - 阈值: WARN 30cm, STOP 15cm, SAFE 40cm
 
-### ✅ 实验9：红外避障 — 已完成
-- `ir_avoid.c`/`.h`：PE5/PE6 发射, PF9/PF10 接收 (active-low)
-- 非对称去抖滤波: 左侧基准(L_RELEASE=1), 右侧慢释放(R_RELEASE=10)
-- `IRAvoid_Tick()` 需在 SysTick 1kHz 驱动
+### ✅ 实验9：红外避障
+- `ir_avoid.c`: PE5/PE6 发射, PF9/PF10 接收 (active-low)
+- 非对称去抖滤波: 左侧即时释放, 右侧慢释放(R_RELEASE=10)
 
-### ✅ 实验10：红外遥控 + 遥控车 — 已完成
-- `ir_remote.c`/`.h`：NEC 协议, PG11 接收, 非阻塞 DWT+EXTI 下降沿解码
-- `test_ir_remote.c`：遥控车逻辑 (急停/前后/左右转/旋转90°/调速/蜂鸣/灯光)
+### ✅ 实验10：红外遥控 + 遥控车
+- `ir_remote.c`: NEC 协议, PG11 接收, 非阻塞 DWT+EXTI 下降沿解码
+- `test_ir_remote.c`: 遥控车逻辑 (急停/前后/左右转/旋转90°/调速/蜂鸣/灯光)
 - PWM 调速: 默认 2100, 步进 10, 范围 600~3600
-- 左右转松手自动停 (150ms timeout), 调速立刻生效
 
-### ⚠️ 已知修正
+### 🔧 实验11：编码器测速（开发中）
+- TIM2/3/4/5 Encoder Interface，中点计数法 (CNT=0x7FFF)
+- `encoder.c`: 四路正交编码器, delta/total/speed 接口
+- 电机参数: PPR=13, 减速比=30, 倍频=x2, 每转=780 counts
+
+### 🔧 K210 通讯（开发中）
+- USART2, $payload# 帧格式, 中断接收 + 轮询发送
+
+## ⚠️ 已知修正
+
 - 左右转方向：物理接线与代码假设相反，已在 motor.c 中交换 turn_left/turn_right 差速逻辑
 - PG11(红外遥控) 与 PF12(超声) 共享 EXTI15_10_IRQn，handler 需分发两个 pin
-
-### ⚠️ CubeMX 重生成注意
-- CMakeLists.txt 首行缺 `#` 注释符，每次重生成后需手动添加
+- LRGB_R_Pin (PG1) 标签在 CubeMX 重生成后丢失，需在 main.h `USER CODE BEGIN Private defines` 中手动补回
+- TIM3 编码器引脚：CubeMX 配为 PA6/PA7，实际接线 PB4/PB5，tim.c 中 USER CODE 块做 partial remap 修正
+- OLED 实际 128×32 面板（`OLED_HEIGHT 32`），但 oled.h 注释误写 128×64
+- Ultrasonic 和 IR remote 共用 DWT CYCCNT；`IRRemote_Init()` 检测计数器已启用则跳过重置，避免冲突
+- Motor3/4 和 Encoder1/2 物理接线反转，由 `MOTOR3_REVERSE=1`/`MOTOR4_REVERSE=1`/`ENCODER1_REVERSE=1`/`ENCODER2_REVERSE=1` 在 config 中逻辑反转

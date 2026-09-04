@@ -1,8 +1,6 @@
 #include "key.h"
+#include "key_config.h"
 #include "main.h"
-
-/* ---- debounce timing ---- */
-#define DEBOUNCE_MS  20   /* 20 ms stable threshold */
 
 /* ---- per-key state (active-low: pressed = pin LOW) ---- */
 typedef struct {
@@ -42,7 +40,7 @@ void Key_Tick(void)
         keys[i].rising_edge = 0;   /* clear edge flag each tick */
 
         if (now != keys[i].stable) {
-            if (++keys[i].debounce_cnt >= DEBOUNCE_MS) {
+            if (++keys[i].debounce_cnt >= KEY_DEBOUNCE_MS) {
                 keys[i].stable = now;
                 keys[i].debounce_cnt = 0;
                 /* Rising edge: just pressed */

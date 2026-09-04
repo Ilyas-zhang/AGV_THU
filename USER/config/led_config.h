@@ -2,74 +2,39 @@
 #define __LED_CONFIG_H
 
 /*
- * LED_Set 八参数配置别名
+ * LED 驱动参数配置
  *
- * LED_Set(l_r, l_g, l_b, l_blink, r_r, r_g, r_b, r_blink)
- *   l_r/l_g/l_b  : 左侧 RGB 强度 0~100
- *   l_blink       : 0=稳态, 1=慢闪(1Hz), 2=快闪/爆闪(5Hz)
- *   r_r/r_g/r_b  : 右侧 RGB 强度 0~100
- *   r_blink       : 同上
+ * 软件 PWM 频率 = 1000 / PWM_PERIOD (Hz)
+ * 慢闪烁频率 = 1000 / (2 × BLINK_SLOW_HALF) (Hz)
+ * 快闪烁频率 = 1000 / (2 × BLINK_FAST_HALF) (Hz)
  */
 
+/* ---- 软件 PWM ---- */
+#define LED_PWM_PERIOD           100     /* PWM 步数, 100 × 1ms = 100Hz */
+
+/* ---- 闪烁半周期 (ms) ---- */
+#define LED_BLINK_SLOW_HALF      500     /* 500ms → 1Hz 慢闪烁 */
+#define LED_BLINK_FAST_HALF      100     /* 100ms → 5Hz 快闪烁 */
+
+/* ---- 预设颜色强度 (0~100) ---- */
+#define L_GREEN                  100     /* 左绿 */
+#define R_GREEN                  100     /* 右绿 */
+#define L_YELLOW_R               100     /* 左黄-红分量 */
+#define L_YELLOW_G               80      /* 左黄-绿分量 */
+#define R_YELLOW_R               100     /* 右黄-红分量 */
+#define R_YELLOW_G               80      /* 右黄-绿分量 */
+
 /* ---- 闪烁模式 ---- */
-#define BLINK_OFF   0    /* 稳态 */
-#define BLINK_SLOW  1    /* 慢闪 1Hz  (转向灯) */
-#define BLINK_FAST  2    /* 爆闪 5Hz  (停车灯/倒车灯) */
+#define BLINK_OFF                0       /* 常亮 */
+#define BLINK_SLOW               1       /* 慢闪 1Hz */
+#define BLINK_FAST               2       /* 快闪 5Hz */
 
-/* ---- 基础亮度 ---- */
-#define L_RED       100
-#define L_GREEN     100
-#define L_BLUE      100
-#define R_RED       100
-#define R_GREEN     100
-#define R_BLUE      100
-
-/* ---- 黄色 = 红+绿 (RGB 混色) ---- */
-#define L_YELLOW_R  100
-#define L_YELLOW_G  100
-#define R_YELLOW_R  100
-#define R_YELLOW_G  100
-
-/* ========== 车辆灯效预设 ========== */
-
-/* 直行：双绿稳态 */
-#define LED_PRESET_FORWARD \
-    0, L_GREEN, 0, BLINK_OFF, \
-    0, R_GREEN, 0, BLINK_OFF
-
-/* 停车：双红爆闪 */
-#define LED_PRESET_STOP \
-    L_RED, 0, 0, BLINK_FAST, \
-    R_RED, 0, 0, BLINK_FAST
-
-/* 倒车：双黄爆闪 */
-#define LED_PRESET_BACKWARD \
-    L_YELLOW_R, L_YELLOW_G, 0, BLINK_FAST, \
-    R_YELLOW_R, R_YELLOW_G, 0, BLINK_FAST
-
-/* 左转：左黄慢闪, 右绿稳态 */
-#define LED_PRESET_TURN_LEFT \
-    L_YELLOW_R, L_YELLOW_G, 0, BLINK_SLOW, \
-    0, R_GREEN, 0, BLINK_OFF
-
-/* 右转：左绿稳态, 右黄慢闪 */
-#define LED_PRESET_TURN_RIGHT \
-    0, L_GREEN, 0, BLINK_OFF, \
-    R_YELLOW_R, R_YELLOW_G, 0, BLINK_SLOW
-
-/* 原地旋转：双黄慢闪 */
-#define LED_PRESET_ROTATE \
-    L_YELLOW_R, L_YELLOW_G, 0, BLINK_SLOW, \
-    R_YELLOW_R, R_YELLOW_G, 0, BLINK_SLOW
-
-/* ========== 通用预设 ========== */
-
-/* 双绿稳态 (同 FORWARD) */
-#define LED_PRESET_BOTH_GREEN  LED_PRESET_FORWARD
-
-/* 全灭 */
-#define LED_PRESET_ALL_OFF \
-    0, 0, 0, BLINK_OFF, \
-    0, 0, 0, BLINK_OFF
+/* ---- 车辆状态预设 ---- */
+#define LED_PRESET_FORWARD       0, L_GREEN, 0, BLINK_OFF,  0, R_GREEN, 0, BLINK_OFF
+#define LED_PRESET_STOP          100, 0, 0, BLINK_FAST,  100, 0, 0, BLINK_FAST
+#define LED_PRESET_BACKWARD      L_YELLOW_R, L_YELLOW_G, 0, BLINK_OFF,  R_YELLOW_R, R_YELLOW_G, 0, BLINK_OFF
+#define LED_PRESET_TURN_LEFT     0, L_GREEN, 0, BLINK_OFF,  R_YELLOW_R, R_YELLOW_G, 0, BLINK_SLOW
+#define LED_PRESET_TURN_RIGHT    L_YELLOW_R, L_YELLOW_G, 0, BLINK_SLOW,  0, R_GREEN, 0, BLINK_OFF
+#define LED_PRESET_ROTATE        100, 0, 0, BLINK_SLOW,   0, R_GREEN, 0, BLINK_SLOW
 
 #endif /* __LED_CONFIG_H */

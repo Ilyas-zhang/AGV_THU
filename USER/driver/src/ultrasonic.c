@@ -13,6 +13,7 @@
  */
 
 #include "ultrasonic.h"
+#include "ultrasonic_config.h"
 #include "main.h"
 
 /* ---- DWT helpers ---- */
@@ -42,7 +43,7 @@ static volatile uint16_t distance_mm  = 0;    /* last measured distance (mm) */
 static volatile uint8_t  echo_active  = 0;    /* 1 = echo high, measuring */
 static volatile uint8_t  data_ready   = 0;    /* 1 = new measurement available */
 
-#define MAX_ECHO_US  35000   /* ~6 m limit, timeout */
+/* MAX_ECHO_US moved to ultrasonic_config.h as ULTRASONIC_MAX_ECHO_US */
 
 /* ---- public API ---- */
 
@@ -108,7 +109,7 @@ void Ultrasonic_EXTI_Handler(void)
         uint32_t elapsed_us = DWT_Micros() - echo_start;
         echo_active = 0;
 
-        if (elapsed_us < MAX_ECHO_US) {
+        if (elapsed_us < ULTRASONIC_MAX_ECHO_US) {
             /* distance_mm = elapsed_us * 5 / 29 */
             distance_mm = (uint16_t)((elapsed_us * 5 + 14) / 29);
             data_ready  = 1;

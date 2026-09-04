@@ -46,10 +46,11 @@ void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
@@ -60,7 +61,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(SonicTrig_GPIO_Port, SonicTrig_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOG, LRGB_R_Pin|LRGB_B_Pin|Buzzer_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOG, GPIO_PIN_1|LRGB_B_Pin|Buzzer_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : RRGB_R_Pin RRGB_G_Pin RRGB_B_Pin LRGB_G_Pin */
   GPIO_InitStruct.Pin = RRGB_R_Pin|RRGB_G_Pin|RRGB_B_Pin|LRGB_G_Pin;
@@ -76,14 +77,6 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : IR_X1_Pin IR_X2_Pin IR_X3_Pin IR_X4_Pin
-                           SonicEcho_Pin */
-  GPIO_InitStruct.Pin = IR_X1_Pin|IR_X2_Pin|IR_X3_Pin|IR_X4_Pin
-                          |SonicEcho_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
-
   /*Configure GPIO pin : SonicTrig_Pin */
   GPIO_InitStruct.Pin = SonicTrig_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -91,17 +84,23 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(SonicTrig_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LRGB_R_Pin LRGB_B_Pin Buzzer_Pin */
-  GPIO_InitStruct.Pin = LRGB_R_Pin|LRGB_B_Pin|Buzzer_Pin;
+  /*Configure GPIO pins : SonicEcho_Pin X1_Pin X2_Pin X3_Pin */
+  GPIO_InitStruct.Pin = SonicEcho_Pin|X1_Pin|X2_Pin|X3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : X4_Pin KEY1_Pin KEY2_Pin KEY3_Pin */
+  GPIO_InitStruct.Pin = X4_Pin|KEY1_Pin|KEY2_Pin|KEY3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PG1 LRGB_B_Pin Buzzer_Pin */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|LRGB_B_Pin|Buzzer_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : KEY1_Pin KEY2_Pin KEY3_Pin */
-  GPIO_InitStruct.Pin = KEY1_Pin|KEY2_Pin|KEY3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
 }

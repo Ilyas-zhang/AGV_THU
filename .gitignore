@@ -1,6 +1,5 @@
 # Build output
 build/
-
 # IDE
 .idea/
 .settings/
@@ -13,8 +12,8 @@ build/
 *.o
 *.obj
 *.elf
-*.hex
 *.bin
+*.hex
 *.map
 *.list
 *.d

@@ -15,13 +15,14 @@
 #define __IR_REMOTE_H
 
 #include <stdint.h>
+#include "ir_remote_config.h"
 
 /* ---- Receiver pin (not in CubeMX, defined manually) ---- */
 
 #define IRREMOTE_GPIO_Port    GPIOG
 #define IRREMOTE_Pin         GPIO_PIN_11
 
-/* ---- NEC timing thresholds (µs, between consecutive falling edges) ---- */
+/* ---- NEC protocol timing (fixed by protocol, not tunable) ---- */
 
 /*
  * Falling-edge deltas for NEC protocol (receiver output, active-low):
@@ -32,20 +33,13 @@
  *   Bit 1:    562.5 µs low + 1,687.5 µs high = 2,250 µs
  *
  * Classification uses center-point ± tolerance.
+ * Tolerances and frame timeout are in ir_remote_config.h.
  */
 
 #define NEC_HEADER_US        13500   /* 9 ms + 4.5 ms */
 #define NEC_REPEAT_US        11250   /* 9 ms + 2.25 ms */
 #define NEC_BIT1_US           2250   /* 562.5 µs + 1,687.5 µs */
 #define NEC_BIT0_US           1125   /* 562.5 µs + 562.5 µs */
-
-/* Tolerance bands for classification */
-#define NEC_HEADER_TOL       1500    /* ±1.5 ms around 13.5 ms */
-#define NEC_REPEAT_TOL       1000    /* ±1.0 ms around 11.25 ms */
-#define NEC_BIT_TOL           400    /* ±0.4 ms around bit values */
-
-/* Timeouts */
-#define NEC_FRAME_TIMEOUT_MS  15    /* Reset if no edge for 15 ms mid-frame */
 
 /* Invalid / no-data sentinel */
 #define IRREMOTE_NO_CODE     0xFF

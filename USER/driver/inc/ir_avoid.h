@@ -16,6 +16,7 @@
 #define __IR_AVOID_H
 
 #include <stdint.h>
+#include "ir_avoid_config.h"
 
 /* ---- Receiver pins (not in CubeMX, defined manually) ---- */
 #define IRAVOID_L_GPIO_Port    GPIOF
@@ -40,10 +41,9 @@
  * Right needs IRAVOID_R_RELEASE consecutive clear reads (10 ms at 1 kHz tick).
  *
  * IRAvoid_Tick() must be called every 1 ms from SysTick to drive the filter.
+ *
+ * Tunable values moved to ir_avoid_config.h.
  */
-
-#define IRAVOID_L_RELEASE     1     /* Left:  baseline — immediate release */
-#define IRAVOID_R_RELEASE    10     /* Right: need 10 consecutive clear reads to release */
 
 /* ---- Initialization / shutdown ---- */
 

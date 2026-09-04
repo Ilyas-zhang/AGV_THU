@@ -19,6 +19,7 @@
  */
 
 #include "obstacle_avoid.h"
+#include "obstacle_avoid_config.h"
 #include "ultrasonic.h"
 #include "motor.h"
 #include "motor_config.h"

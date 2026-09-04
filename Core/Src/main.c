@@ -20,6 +20,7 @@
 #include "main.h"
 #include "i2c.h"
 #include "tim.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -40,6 +41,17 @@
 #include "test_ir_avoid.h"
 #include "ir_remote.h"
 #include "test_ir_remote.h"
+#include "encoder.h"
+#include "encoder_config.h"
+#include "test_encoder.h"
+#include "test_line_follow.h"
+#include "line_follow_config.h"
+#include "k210_comm.h"
+#include "test_k210_comm.h"
+#include "ultrasonic_overtake.h"
+#include "test_ultrasonic_overtake.h"
+#include "ir_avoid_drive.h"
+#include "test_ir_avoid_drive.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -106,10 +118,16 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM8_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
+  MX_TIM3_Init();
+  MX_TIM4_Init();
+  MX_TIM5_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   LED_Init();
   Buzz_Init();
   Motor_Init();
+  Encoder_Init();
   IRTracking_Init();
   Key_Init();
   Ultrasonic_Init();
@@ -117,8 +135,15 @@ int main(void)
   // TestUltrasonic_Init();   /* 纯测距显示，避障测试时关闭 */
   // TestObstacle_Init();      /* 超声避障 */
   // TestIRAvoid_Init();      /* 红外避障 — 启用前先关闭 TestObstacle，避免抢电机 */
-  TestIRRemote_Init();        /* 红外遥控 */
+  // TestUltrasonicOvertake_Init();  /* 超声超车避障 */
+  // TestIRAvoidDrive_Init();        /* 红外避障驾驶 — 需同时取消 IRAvoid_Tick() 注释 */
+  // TestIRRemote_Init();        /* 红外遥控 */
   // TestMotor_Init();           /* 电机测试 */
+  // TestEncoder_Init();          /* 编码器测试 */
+  // TestLineFollow_Init();        /* 循迹测试 */
+  // TestIRRemote_Init();           /* 红外遥控 */
+  K210Comm_Init();              /* K210通讯 */
+  TestK210Comm_Init();          /* K210通讯测试 */
   // TestBuzz_Init();
   // TestMotor_Init();
   /* USER CODE END 2 */
