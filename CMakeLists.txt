@@ -1,4 +1,4 @@
-#此文件从模板自动生成! 请勿更改!
+# 此文件从模板自动生成! 请勿更改!
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_VERSION 1)
 cmake_minimum_required(VERSION 3.28)
@@ -49,7 +49,7 @@ else ()
     add_compile_options(-Og -g)
 endif ()
 
-include_directories(Core/Inc Drivers/STM32F1xx_HAL_Driver/Inc/Legacy Drivers/STM32F1xx_HAL_Driver/Inc Drivers/CMSIS/Device/ST/STM32F1xx/Include Drivers/CMSIS/Include USER/config USER/driver/inc USER/task/test_tasks/inc USER/test/Inc USER/project)
+include_directories(Core/Inc Drivers/STM32F1xx_HAL_Driver/Inc/Legacy Drivers/STM32F1xx_HAL_Driver/Inc Drivers/CMSIS/Device/ST/STM32F1xx/Include Drivers/CMSIS/Include USER/config USER/driver/inc USER/task/test_tasks/inc)
 
 add_definitions(-DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xE)
 

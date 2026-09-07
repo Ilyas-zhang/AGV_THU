@@ -45,6 +45,7 @@
 #include "encoder_config.h"
 #include "test_encoder.h"
 #include "test_line_follow.h"
+#include "test_vision_line_follow.h"
 #include "line_follow_config.h"
 #include "k210_comm.h"
 #include "test_k210_comm.h"
@@ -140,10 +141,11 @@ int main(void)
   // TestIRRemote_Init();        /* 红外遥控 */
   // TestMotor_Init();           /* 电机测试 */
   // TestEncoder_Init();          /* 编码器测试 */
-  // TestLineFollow_Init();        /* 循迹测试 */
+  TestLineFollow_Init();        /* 红外循迹测试 */
   // TestIRRemote_Init();           /* 红外遥控 */
-  K210Comm_Init();              /* K210通讯 */
-  TestK210Comm_Init();          /* K210路牌识别测试 */
+  // K210Comm_Init();              /* K210通讯 */
+  // TestK210Comm_Init();          /* K210路牌识别测试 */
+  // TestVisionLineFollow_Init();   /* 视觉循迹测试 */
   // TestBuzz_Init();
   // TestMotor_Init();
   /* USER CODE END 2 */

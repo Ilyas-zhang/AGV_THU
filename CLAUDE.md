@@ -24,11 +24,11 @@ cmake --build build
 
 **⚠️ CLion CMake Generator**：必须设为 `Ninja`（Settings → Build → CMake → Generator），否则默认 nmake 找不到会报错。
 
-**⚠️ CubeMX 重生成后**：CMakeLists.txt 首行缺 `#` 注释符，需手动添加。
+**⚠️ CubeMX 重生成后**：CMakeLists.txt 首行缺 `#` 注释符，需手动添加。`include_directories` 会恢复为旧路径（缺少 `USER/config`，多出 `USER/test/Inc` 和 `USER/project`），需修正为当前值。
 
 CMake uses `file(GLOB_RECURSE SOURCES "Core/*.*" "Drivers/*.*" "USER/*.*")` — new files under `USER/` are auto-discovered; no manual source list to update.
 
-Post-build produces `AGV_THU.elf`, `.hex`, and `.bin` in the build directory.
+Post-build produces `AGV_THU.elf`, `.hex`, and `.bin` in the build directory. A `firmware/AGV_THU.hex` is tracked in git for sharing (manually copy from build output — the auto-copy CMake step was removed).
 
 ## Flash / Debug
 
@@ -139,6 +139,7 @@ GPIO, CORTEX, DMA, FLASH, EXTI, PWR, RCC, TIM, I2C, UART
 ## Key Conventions
 
 - User code goes **strictly inside** `USER CODE BEGIN` / `USER CODE END` blocks
+- **Git 提交**: 不要自动提交配置切换、测试启用/禁用等操作性改动。等用户明确说"提交"或"push"再执行。仅在新增功能模块、修复 bug 等实质性变更时可询问。
 - The HAL config controls which HAL modules are compiled — enable new peripherals via CubeMX
 - Linker script: `STM32F103ZETX_FLASH.ld` — heap 0x200, stack 0x400
 - Cross-compiler flags in `CMakeLists.txt`; CPU is `-mcpu=cortex-m3 -mthumb`
@@ -178,6 +179,14 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - `line_follow.c`: 状态驱动差速转向（直行/小转/大转/原地旋/脱线续行/十字直穿）
   - ⚠️ 头文件注释描述了加权误差+Kp方案，但实现是离散状态阶梯，`GetError()` 返回 last_dir(-1/0/+1)
 
+### ✅ 实验6：OLED显示
+- SSD1306 128×32, HAL I2C1 (PB6/PB7, addr 0x3C), 3 font sizes (7×10, 11×18, 16×26)
+- ⚠️ `OLED_Puts(str, font, OLED_COLOR_BLACK)` does NOT clear text — it makes background pixels WHITE (inverted fill). Use `OLED_Clear()` + redraw instead.
+
+### ✅ 实验7：超声波测距 + 速度估算
+- HC-SR04 (PF11 trigger, PF12 echo), DWT+EXTI non-blocking
+- `ultrasonic_speed.c`: Δdistance/Δtime + EMA filter (α=0.25)
+
 ### ✅ 实验8：超声避障
 - `obstacle_avoid.c`: 状态机 FORWARD→SLOW→STOP→BACKUP→TURN→FORWARD
 - 阈值: WARN 30cm, STOP 15cm, SAFE 40cm
@@ -207,6 +216,9 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - `encoder.c`: 四路正交编码器, delta/total/speed 接口
 - 电机参数: PPR=13, 减速比=30, 倍频=x2, 每转=780 counts
 
+### ⚠️ 电机最低启动速度
+**PWM speed 必须 ≥ 2100 才能让车轮转动**。低于此值扭矩不足以克服静摩擦。所有 `*_SPEED` config 参数不得低于 2100（含减速状态，否则等于停车）。原地旋转建议更高。
+
 ### ✅ K210 通讯 + 路牌识别
 - USART2 重映射到 PD5(TX)/PD6(RX)（PA3 物理损坏）
 - `$payload#` 帧格式
@@ -234,6 +246,6 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - PA3 (USART2_RX) 物理损坏：USART2 已通过 AFIO 重映射到 PD5(TX)/PD6(RX)。`.ioc` 已配置 PD4(RTS)/PD5(TX)/PD6(RX) + `__HAL_AFIO_REMAP_USART2_ENABLE()`，CubeMX 生成代码直接处理，USER CODE 块为空。K210 接线必须连到 PD5/PD6。
 - `test_k210_comm.c` 禁用 RXNE 中断做轮询接收，与 `k210_comm.c` 中断接收互斥。如果其他代码需要中断接收帧，不能同时启用 test_k210_comm。
 - `overtake.h` 注释称状态名为 `"RL"/"RR"`，但 `Overtake_GetStateName()` 实际返回 `"ROT1"/"ROT2"`
-- CMakeLists.txt `include_directories` 含两个不存在的路径 `USER/test/Inc` 和 `USER/project`（CubeMX 重生成残留，不影响编译但应清理）
+- CMakeLists.txt `include_directories` 含两个不存在的路径 `USER/test/Inc` 和 `USER/project`（CubeMX 重生成残留，每次重生成后需修正）
 - `ultrasonic_speed.c/h`：超声测速驱动（Δdistance/Δtime + EMA 滤波），已存在但未被任何 test task 使用
 - IR avoid emitters 为 active-LOW：`IRAvoid_EmitterOn()` 写 `GPIO_PIN_RESET`，`EmitterOff()` 写 `GPIO_PIN_SET`

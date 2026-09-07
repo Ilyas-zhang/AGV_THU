@@ -1,125 +1,72 @@
 /*
- * test_k210_comm.c — K210 路牌识别测试
+ * test_k210_comm.c — K210 路牌识别 + 视觉驾驶测试
  *
- * K210 (main.py) 发送路牌指令：
+ * 薄封装：调用 VisionDrive 驱动 + OLED 状态显示
+ *
+ * K210 (sign_detect.py) 发送路牌指令：
  *   "$R#" → RIGHT   "$L#" → LEFT   "$S#" → STOP
- *   "$H#" → HORN    "$2#" → ROOM2  "$1#" → ROOM1
  *
- * STM32 接收后在 OLED 显示路牌结果：
- *   Line 0: "Sign: RIGHT"
- *   Line 1: "RX: alive"
+ * 视觉驾驶行为（由 vision_drive.c 驱动）：
+ *   LEFT  → 左超车 → 直行1s → 右超车 → 恢复前进
+ *   RIGHT → 右超车 → 直行1s → 左超车 → 恢复前进
+ *   STOP  → 停车
  *
- * USART2: PD5(TX)/PD6(RX) 115200 8N1（CubeMX 已配置重映射）
- * LED 闪烁 1 Hz 表示板子活着
- * OLED 128×32, Font_7x10
+ * USART2: PD5(TX)/PD6(RX) 115200 8N1
+ * OLED 128×32, Font_7x10, 20 Hz 刷新 (I2C 400kHz)
  */
 
 #include "test_k210_comm.h"
-#include "k210_comm.h"
+#include "vision_drive.h"
 #include "oled.h"
 #include "led.h"
 #include "led_config.h"
+#include "k210_comm.h"
 #include "main.h"
 #include "usart.h"
 
-#define DISPLAY_INTERVAL_MS    200     /* OLED 刷新间隔 */
+#define DISPLAY_INTERVAL_MS    50      /* OLED 刷新间隔 (I2C 400kHz 下 ~12ms/帧, 50ms→20Hz) */
 #define LED_BLINK_MS           500     /* LED 闪烁半周期 */
 
-static uint16_t disp_cnt     = 0;
-static uint16_t led_cnt      = 0;
-static char     last_sign    = '-';    /* 最近收到的路牌指令 */
-static char     rx_buf[17]   = "-";    /* 显示用接收缓冲 */
+static uint16_t disp_cnt = 0;
+static uint16_t led_cnt  = 0;
 
-/* 轮询接收局部状态 */
-static char     rx_buf_local[17] = "";
-static uint8_t  rx_index    = 0;
-static uint8_t  rx_flag     = 0;
-static uint8_t  msg_ready_local = 0;
+/* ---- helpers ---- */
 
-/* 路牌指令转文字 */
 static const char *sign_name(char c)
 {
     switch (c) {
     case 'R': return "RIGHT ";
     case 'L': return "LEFT  ";
     case 'S': return "STOP  ";
-    case 'H': return "HORN  ";
-    case '2': return "ROOM2 ";
-    case '1': return "ROOM1 ";
     case 'a': return "ALIVE ";
     default:  return "---   ";
     }
 }
 
+/* ---- Init ---- */
+
 void TestK210Comm_Init(void)
 {
-    disp_cnt  = 0;
-    led_cnt   = 0;
-    last_sign = '-';
-    rx_buf[0] = '-'; rx_buf[1] = '\0';
+    disp_cnt = 0;
+    led_cnt  = 0;
 
-    /* 禁用 RXNE 中断，纯轮询接收 */
-    __HAL_UART_DISABLE_IT(&huart2, UART_IT_RXNE);
-
-    /* LED 亮一下表示重启完成 */
-    LED_Set(LED_PRESET_STOP);
+    /* K210Comm_Init() 已在 main() 中调用并使能 RXNE 中断 */
+    VisionDrive_Init();
 
     OLED_Clear();
     OLED_GotoXY(0, 0);
-    OLED_Puts("Sign: ---", &Font_7x10, OLED_COLOR_WHITE);
+    OLED_Puts("VisDrive IDLE", &Font_7x10, OLED_COLOR_WHITE);
     OLED_GotoXY(0, 10);
-    OLED_Puts("K210 Sign Test", &Font_7x10, OLED_COLOR_WHITE);
+    OLED_Puts("Sign: ---", &Font_7x10, OLED_COLOR_WHITE);
     OLED_Update();
 }
 
+/* ---- Tick ---- */
+
 void TestK210Comm_Tick(void)
 {
-    /* ---- 轮询 USART2 RX ---- */
-    {
-        uint32_t sr = USART2->SR;
-
-        /* 清 ORE（读 DR 清除） */
-        if (sr & USART_SR_ORE) {
-            (void)USART2->DR;
-        }
-        /* RXNE → 读取一字节并送入帧解析器 */
-        else if (sr & USART_SR_RXNE) {
-            uint8_t ch = (uint8_t)(USART2->DR & 0xFF);
-            k210_rx_byte_cnt++;
-
-            if (ch == '$') {
-                rx_index = 0;
-                rx_flag = 1;
-                rx_buf_local[0] = '\0';
-            } else if (rx_flag && ch == '#') {
-                rx_buf_local[rx_index] = '\0';
-                rx_flag = 0;
-                msg_ready_local = 1;
-            } else if (rx_flag) {
-                if (rx_index < 16) {
-                    rx_buf_local[rx_index++] = (char)ch;
-                } else {
-                    rx_flag = 0;
-                    rx_index = 0;
-                }
-            }
-        }
-    }
-
-    /* 检查是否收到完整帧 */
-    if (msg_ready_local) {
-        msg_ready_local = 0;
-        if (rx_buf_local[0] == 'R' || rx_buf_local[0] == 'L' || rx_buf_local[0] == 'S'
-            || rx_buf_local[0] == 'H' || rx_buf_local[0] == '1' || rx_buf_local[0] == '2'
-            || rx_buf_local[0] == 'a') {
-            last_sign = rx_buf_local[0];
-        }
-        uint8_t i;
-        for (i = 0; i < 16 && rx_buf_local[i] != '\0'; i++) {
-            rx_buf[i] = rx_buf_local[i];
-        }
-        rx_buf[i] = '\0';
-    }
+    /* ---- Drive vision + overtake state machine ---- */
+    VisionDrive_Tick();
 
     /* ---- LED 1 Hz 闪烁 ---- */
     if (++led_cnt >= LED_BLINK_MS) {
@@ -131,7 +78,7 @@ void TestK210Comm_Tick(void)
         } else {
             LED_Set(0, 0, 0, BLINK_OFF, 0, 0, 0, BLINK_OFF);
         }
-        /* 从 USART2 TX (PD5) 发送心跳 */
+        /* 心跳 */
         K210Comm_SendFrame("alive");
     }
 
@@ -141,15 +88,15 @@ void TestK210Comm_Tick(void)
 
         OLED_Clear();
 
-        /* Line 0: "Sign: RIGHT " */
+        /* Line 0: "VisDrive ROT1" — 当前驾驶状态 */
         OLED_GotoXY(0, 0);
-        OLED_Puts("Sign:", &Font_7x10, OLED_COLOR_WHITE);
-        OLED_Puts(sign_name(last_sign), &Font_7x10, OLED_COLOR_WHITE);
+        OLED_Puts("VisDrive ", &Font_7x10, OLED_COLOR_WHITE);
+        OLED_Puts(VisionDrive_GetDetailStateName(), &Font_7x10, OLED_COLOR_WHITE);
 
-        /* Line 1: "RX: alive" */
+        /* Line 1: "Sign: LEFT " — 最近路牌 */
         OLED_GotoXY(0, 10);
-        OLED_Puts("RX: ", &Font_7x10, OLED_COLOR_WHITE);
-        OLED_Puts(rx_buf, &Font_7x10, OLED_COLOR_WHITE);
+        OLED_Puts("Sign:", &Font_7x10, OLED_COLOR_WHITE);
+        OLED_Puts(sign_name(VisionDrive_GetLastSign()), &Font_7x10, OLED_COLOR_WHITE);
 
         OLED_Update();
     }

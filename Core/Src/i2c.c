@@ -51,7 +51,10 @@ void MX_I2C1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2C1_Init 2 */
-
+  /* SSD1306 支持 I2C Fast Mode 400 kHz，覆盖 CubeMX 默认的 100 kHz
+   * 128×32 全帧传输从 ~46ms 降至 ~12ms，OLED 刷新更流畅 */
+  hi2c1.Init.ClockSpeed = 400000;
+  HAL_I2C_Init(&hi2c1);
   /* USER CODE END I2C1_Init 2 */
 
 }
