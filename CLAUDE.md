@@ -86,9 +86,12 @@ sources/
 9. **Overtake driver composition**: `overtake.c` is a generic overtaking state machine (STOP → ROTATE_1 → PASS → ROTATE_2 → IDLE). Higher-level drivers compose it:
    - `ultrasonic_overtake.c` — triggers overtake when ultrasonic distance ≤ threshold
    - `ir_avoid_drive.c` — triggers overtake based on IR avoid sensor readings (left obstacle → right overtake, right obstacle → left overtake)
-   - Both delegate all maneuver logic to `overtake.c`; their configs only cover sensor-specific parameters, while maneuver timing/speed lives in `overtake_config.h`.
+   - `vision_drive.c` — triggers overtake based on K210 road sign commands (LEFT sign → left overtake, RIGHT sign → right overtake)
+   - All delegate maneuver logic to `overtake.c`; their configs cover trigger-specific parameters, while maneuver timing/speed lives in `overtake_config.h`.
 
-10. **CubeMX pin remap overrides**: TIM3 encoder is wired to PB4/PB5 but CubeMX configures PA6/PA7. Fixed at runtime inside `USER CODE TIM3_MspInit 1` in `tim.c` via `__HAL_AFIO_REMAP_TIM3_PARTIAL()`. TIM1 motor PWM remap (`__HAL_AFIO_REMAP_TIM1_ENABLE()`) is similarly handled in `HAL_TIM_MspPostInit`. USART2 remap to PD5/PD6 is now configured directly in the `.ioc` (CubeMX generates the `__HAL_AFIO_REMAP_USART2_ENABLE()` call and PD4/PD5/PD6 GPIO init); the `USER CODE USART2_MspInit 1` block in `usart.c` is empty.
+10. **P-control differential drive + three-step-turn**: `line_follow.c` uses proportional control: `corr = err × KP`, applied via `car_diff_turn(base - corr, base)` — allows inner wheel to go negative (reverse) for automatic in-place rotation at large errors. For sharp bends (middle+outer sensors both on), a three-step state machine takes over: TT_CROSS (drive past bend apex) → TT_SPIN (rotate until centered) → TT_SKIP_OUTER (crossing line handling). Lost-line recovery spins in the last direction with timeout. `car_brake()` provides energy braking (H-bridge short) at state transitions. `vision_line_follow.c` (K210) still uses the older weighted-error + EMA + Kp pattern.
+
+11. **CubeMX pin remap overrides**: TIM3 encoder is wired to PB4/PB5 but CubeMX configures PA6/PA7. Fixed at runtime inside `USER CODE TIM3_MspInit 1` in `tim.c` via `__HAL_AFIO_REMAP_TIM3_PARTIAL()`. TIM1 motor PWM remap (`__HAL_AFIO_REMAP_TIM1_ENABLE()`) is similarly handled in `HAL_TIM_MspPostInit`. USART2 remap to PD5/PD6 is now configured directly in the `.ioc` (CubeMX generates the `__HAL_AFIO_REMAP_USART2_ENABLE()` call and PD4/PD5/PD6 GPIO init); the `USER CODE USART2_MspInit 1` block in `usart.c` is empty.
 
 ### Peripheral / Timer Mapping
 
@@ -169,6 +172,7 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - TIM1 + TIM8 8 通道 PWM 20KHz
 - `motor.c`: 单电机正/反/停 + 整车前进/后退/左转/右转/旋转/停止
 - PWM 调速版 `pwm_motor*_forward/backward(speed)`, speed: 0~3599
+- 差速转弯 `car_diff_turn(left, right)` — 允许负速（内侧轮反转=原地旋），能耗制动 `car_brake()` — H桥短接快速刹车
 
 ### ✅ 实验4：运动控制（提高）
 - 轨迹调控: 组合调用 + HAL_Delay 控制时长
@@ -176,8 +180,13 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 
 ### ✅ 实验5：黑线循迹
 - `irtracking.c`: PF13/14/15 + PG0 四路循迹传感器，非对称去抖滤波
-- `line_follow.c`: 状态驱动差速转向（直行/小转/大转/原地旋/脱线续行/十字直穿）
-  - ⚠️ 头文件注释描述了加权误差+Kp方案，但实现是离散状态阶梯，`GetError()` 返回 last_dir(-1/0/+1)
+- `line_follow.c`: P 控制差速 + 三步走大拐弯 + 能耗制动
+  - P 控制差速: `corr = err × KP`, `car_diff_turn(base-corr, base)` — 允许内侧轮负速=自动原地旋转
+  - 误差分级: 0=居中, ±1=中间单灯微偏, ±2=仅外灯亮大偏移
+  - 三步走大拐弯: 中间两灯+外灯同亮 → TT_CROSS(越顶点) → TT_SPIN(旋转找线) → TT_SKIP_OUTER(交叉线直行)
+  - 脱线: 按丢线前方向同向旋转找线，超时判真丢线停车
+  - 能耗制动: `car_brake()` — 8路PWM拉满=H桥短接刹车，远快于自由滑行
+  - 控制周期: 3ms (`LF_PERIOD_MS`)，由 SysTick tick 计数器模拟
 
 ### ✅ 实验6：OLED显示
 - SSD1306 128×32, HAL I2C1 (PB6/PB7, addr 0x3C), 3 font sizes (7×10, 11×18, 16×26)
@@ -224,7 +233,7 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - `$payload#` 帧格式
 - **中断接收** (`k210_comm.c`): USART2 RXNE 中断逐字节解析帧，`K210Comm_IRQHandler()` 在 `USART2_IRQHandler` 中调用
 - **轮询接收** (`test_k210_comm.c`): 禁用 RXNE，SysTick 中轮询 SR 寄存器读字节解析帧
-- K210 → STM32: `$R#`/`$L#`/`$S#`/`$H#`/`$1#`/`$2#` 路牌指令 (RIGHT/LEFT/STOP/HORN/ROOM1/ROOM2)，`$a#` 心跳回复 (ALIVE)
+- K210 → STM32: `$R#`/`$L#`/`$S#`/`$H#`/`$1#`/`$2#` 路牌指令 (RIGHT/LEFT/STOP/HORN/ROOM1/ROOM2)，`$e<value>#` 视觉循迹误差 (value: -100~+100, 999=脱线)，`$a#` 心跳回复 (ALIVE)
 - STM32 → K210: `$alive#` 心跳
 - K210 端脚本:
   - `USER/task/vision_tasks/sign_detect.py` — 自学习分类器 (mb-0.25.kmodel), 3 类 (RIGHT/LEFT/STOP), 连续 STABLE_FRAMES 帧确认后发送, REARM_FRAMES 帧后重触发
@@ -232,6 +241,46 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
   - KPU 模型 `sources/KPU/self_learn_classifier/mb-0.25.kmodel` 需复制到 K210 TF 卡 `/sd/KPU/` 目录
   - K210 UART1: TX=IO8, RX=IO6, 115200 8N1
 - OLED 显示路牌结果
+
+### ✅ 视觉驾驶（Vision Drive）
+- `vision_drive.c`: K210 路牌指令触发超车机动
+  - LEFT 路牌 → 左超车 → 直行 1s → 右超车 → 恢复前进
+  - RIGHT 路牌 → 右超车 → 直行 1s → 左超车 → 恢复前进
+  - STOP 路牌 → 停车
+  - 超车机动委托 `overtake.c`，参数在 `overtake_config.h`
+- 参数: `vision_drive_config.h` (前进速度/超车间直行时间)
+
+### ✅ 视觉循迹（Vision Line Follow）
+- `vision_line_follow.c`: K210 摄像头检测黑线位置，通过 UART 发送误差值
+  - K210 → STM32: `$e<value>#`，value: -100~+100 (负=偏左, 正=偏右), 999=脱线
+  - STM32 接收后经 EMA 滤波 (α=0.25)，Kp 比例差速
+  - 脱线/通讯超时 → 按上次误差方向旋转找回
+  - STM32 → K210: `$alive#` 心跳 (每 1s)
+- 测试任务: `test_vision_line_follow.c`
+- 参数: `vision_line_follow_config.h` (速度/Kp/EMA/脱线旋转/通讯超时/显示刷新)
+
+### Driver ↔ Config ↔ Test Quick Reference
+
+| Driver (`driver/src/`) | Config (`config/`) | Test Task (`test_tasks/src/`) |
+|---|---|---|
+| `motor.c` | `motor_config.h` | `test_motor.c`, `test_motor_gpio.c` |
+| `line_follow.c` | `line_follow_config.h` | `test_line_follow.c` |
+| `irtracking.c` | *(none)* | *(via line_follow)* |
+| `obstacle_avoid.c` | `obstacle_avoid_config.h` | `test_obstacle.c` |
+| `overtake.c` | `overtake_config.h` | *(composed)* |
+| `ultrasonic_overtake.c` | `ultrasonic_overtake_config.h` | `test_ultrasonic_overtake.c` |
+| `ir_avoid.c` | `ir_avoid_config.h` | `test_ir_avoid.c` |
+| `ir_avoid_drive.c` | `ir_avoid_drive_config.h` | `test_ir_avoid_drive.c` |
+| `vision_drive.c` | `vision_drive_config.h` | *(no dedicated test)* |
+| `vision_line_follow.c` | `vision_line_follow_config.h` | `test_vision_line_follow.c` |
+| `ir_remote.c` | `ir_remote_config.h` | `test_ir_remote.c` |
+| `k210_comm.c` | `k210_comm_config.h` | `test_k210_comm.c` |
+| `ultrasonic.c` | `ultrasonic_config.h` | `test_ultrasonic.c` |
+| `encoder.c` | `encoder_config.h` | `test_encoder.c` |
+| `oled.c` | *(none)* | `test_oled.c` |
+| `led.c` | `led_config.h` | *(via other tests)* |
+| `buzz.c` | *(none)* | `test_buzz.c` |
+| `key.c` | `key_config.h` | *(via other tests)* |
 
 ## ⚠️ 已知修正
 
@@ -246,6 +295,7 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - PA3 (USART2_RX) 物理损坏：USART2 已通过 AFIO 重映射到 PD5(TX)/PD6(RX)。`.ioc` 已配置 PD4(RTS)/PD5(TX)/PD6(RX) + `__HAL_AFIO_REMAP_USART2_ENABLE()`，CubeMX 生成代码直接处理，USER CODE 块为空。K210 接线必须连到 PD5/PD6。
 - `test_k210_comm.c` 禁用 RXNE 中断做轮询接收，与 `k210_comm.c` 中断接收互斥。如果其他代码需要中断接收帧，不能同时启用 test_k210_comm。
 - `overtake.h` 注释称状态名为 `"RL"/"RR"`，但 `Overtake_GetStateName()` 实际返回 `"ROT1"/"ROT2"`
+- `line_follow.c` 方向映射：`pwm_car_rotate_left()` 实际向右旋，`pwm_car_rotate_right()` 实际向左旋（与专家 `car_spin_left/right` 一致，实车核定）
 - CMakeLists.txt `include_directories` 含两个不存在的路径 `USER/test/Inc` 和 `USER/project`（CubeMX 重生成残留，每次重生成后需修正）
 - `ultrasonic_speed.c/h`：超声测速驱动（Δdistance/Δtime + EMA 滤波），已存在但未被任何 test task 使用
 - IR avoid emitters 为 active-LOW：`IRAvoid_EmitterOn()` 写 `GPIO_PIN_RESET`，`EmitterOff()` 写 `GPIO_PIN_SET`

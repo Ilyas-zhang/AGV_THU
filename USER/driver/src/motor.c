@@ -249,3 +249,58 @@ void pwm_car_rotate_right(int16_t speed)
 }
 
 void pwm_car_stop(void) { motor_stop(); }
+
+/* ========== 整车：差速转弯 + 能耗制动 ========== */
+
+void car_diff_turn(int16_t left_speed, int16_t right_speed)
+{
+    /*
+     * 有符号差速转弯：左右两侧独立给速
+     * 正数=前进，负数=后退，绝对值 0~3599
+     * 物理左侧 = M3/M4，物理右侧 = M1/M2
+     * 允许内侧轮负速 → 自动原地旋转（P 控制大误差输出）
+     *
+     * 注意：MOTORx_REVERSE 已在 pwm_motorN_forward/backward 内部处理，
+     * 这里不需要额外反转逻辑。
+     */
+    if (left_speed >= 0)
+    {
+        pwm_motor3_forward(MOTOR3_PWM(left_speed));
+        pwm_motor4_forward(MOTOR4_PWM(left_speed));
+    }
+    else
+    {
+        int16_t mag = (int16_t)(-left_speed);
+        pwm_motor3_backward(MOTOR3_PWM(mag));
+        pwm_motor4_backward(MOTOR4_PWM(mag));
+    }
+
+    if (right_speed >= 0)
+    {
+        pwm_motor1_forward(MOTOR1_PWM(right_speed));
+        pwm_motor2_forward(MOTOR2_PWM(right_speed));
+    }
+    else
+    {
+        int16_t mag = (int16_t)(-right_speed);
+        pwm_motor1_backward(MOTOR1_PWM(mag));
+        pwm_motor2_backward(MOTOR2_PWM(mag));
+    }
+}
+
+void car_brake(void)
+{
+    /*
+     * 能耗制动：8 路 PWM 全部拉满输出高电平 = H 桥 A=B=1 = 电机两端短接刹车。
+     * 比占空比清零（自由滑行）停得快得多——撞不撞墙就看这一脚。
+     * CCR=3600 > ARR=3599，PWM1 模式下输出恒高，占空比 100%
+     */
+    TIM8->CCR1 = 3600;
+    TIM8->CCR2 = 3600;
+    TIM8->CCR3 = 3600;
+    TIM8->CCR4 = 3600;
+    TIM1->CCR1 = 3600;
+    TIM1->CCR2 = 3600;
+    TIM1->CCR3 = 3600;
+    TIM1->CCR4 = 3600;
+}

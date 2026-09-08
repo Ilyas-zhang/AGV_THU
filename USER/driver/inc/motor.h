@@ -46,4 +46,22 @@ void pwm_car_rotate_left(int16_t speed);
 void pwm_car_rotate_right(int16_t speed);
 void pwm_car_stop(void);
 
+/* ---- 整车：差速转弯 + 能耗制动 ---- */
+
+/**
+ * @brief  Signed differential drive: left/right sides get independent speeds.
+ *         Positive = forward, negative = backward, magnitude 0~3599.
+ *         Allows inner wheel reversal for in-place rotation (P-control output).
+ *         Physical layout: M3/M4 = left side, M1/M2 = right side.
+ */
+void car_diff_turn(int16_t left_speed, int16_t right_speed);
+
+/**
+ * @brief  Energy braking: set all 8 PWM channels to max output.
+ *         H-bridge A=B=1 → motor terminals shorted → fast deceleration.
+ *         Much faster than pwm_car_stop() (free-wheeling).
+ *         CCR=3600 > ARR=3599 → PWM1 mode outputs constant high.
+ */
+void car_brake(void);
+
 #endif /* __MOTOR_H */
