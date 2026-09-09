@@ -5,6 +5,9 @@
  * Right overtake: STOP → ROTATE_RIGHT → PASS → ROTATE_LEFT  → IDLE
  *
  * 物理接线反向：代码 rotate_right = 实际左旋, 代码 rotate_left = 实际右旋
+ *
+ * 参数通过 Overtake_Config 在运行期设置，
+ * 默认值来自 overtake_config.h 宏（Overtake_Init 恢复默认）。
  */
 
 #include "overtake.h"
@@ -24,21 +27,38 @@ typedef enum {
     OV_ROTATE_2     /* second rotate (opposite direction) */
 } OV_State;
 
-static OV_State   state      = OV_IDLE;
-static uint16_t   timer      = 0;
-static int8_t     direction  = 0;       /* OVERTAKE_DIR_LEFT or RIGHT, 0 = idle */
-static uint8_t    complete   = 0;
+static OV_State       state      = OV_IDLE;
+static uint16_t       timer      = 0;
+static int8_t         direction  = 0;       /* OVERTAKE_DIR_LEFT or RIGHT, 0 = idle */
+static uint8_t        complete   = 0;
+static Overtake_Config cfg;                  /* 运行期参数 */
+
+/* ---- config API ---- */
+
+void Overtake_GetDefaultConfig(Overtake_Config *c)
+{
+    c->stop_delay_ms = OV_STOP_DELAY_MS;
+    c->rotate_ms     = OV_ROTATE_MS;
+    c->pass_ms       = OV_PASS_MS;
+    c->rotate_speed  = OV_ROTATE_SPEED;
+    c->pass_speed    = OV_PASS_SPEED;
+}
+
+void Overtake_SetConfig(const Overtake_Config *c)
+{
+    cfg = *c;
+}
 
 /* ---- rotate helpers (with physical wiring inversion) ---- */
 
 static void do_rotate_left(void)
 {
-    pwm_car_rotate_right(OV_ROTATE_SPEED);  /* 物理接线反向 */
+    pwm_car_rotate_right(cfg.rotate_speed);  /* 物理接线反向 */
 }
 
 static void do_rotate_right(void)
 {
-    pwm_car_rotate_left(OV_ROTATE_SPEED);   /* 物理接线反向 */
+    pwm_car_rotate_left(cfg.rotate_speed);   /* 物理接线反向 */
 }
 
 /* ---- state transition helpers ---- */
@@ -48,6 +68,7 @@ static void enter_idle(void)
     state = OV_IDLE;
     timer = 0;
     direction = 0;
+    pwm_car_stop();      /* 超车完成必须停车，否则电机保持旋转命令继续转动 */
 }
 
 static void enter_stop(void)
@@ -76,7 +97,7 @@ static void enter_pass(void)
 {
     state = OV_PASS;
     timer = 0;
-    pwm_car_forward(OV_PASS_SPEED);
+    pwm_car_forward(cfg.pass_speed);
     LED_Set(LED_PRESET_FORWARD);
     Buzz_Off();
 }
@@ -102,6 +123,7 @@ void Overtake_Init(void)
     timer    = 0;
     direction = 0;
     complete = 0;
+    Overtake_GetDefaultConfig(&cfg);    /* 恢复 overtake_config.h 默认值 */
 }
 
 void Overtake_Trigger(int8_t dir)
@@ -121,25 +143,25 @@ void Overtake_Tick(void)
         break;
 
     case OV_STOP:
-        if (++timer >= OV_STOP_DELAY_MS) {
+        if (++timer >= cfg.stop_delay_ms) {
             enter_rotate_1();
         }
         break;
 
     case OV_ROTATE_1:
-        if (++timer >= OV_ROTATE_MS) {
+        if (++timer >= cfg.rotate_ms) {
             enter_pass();
         }
         break;
 
     case OV_PASS:
-        if (++timer >= OV_PASS_MS) {
+        if (++timer >= cfg.pass_ms) {
             enter_rotate_2();
         }
         break;
 
     case OV_ROTATE_2:
-        if (++timer >= OV_ROTATE_MS) {
+        if (++timer >= cfg.rotate_ms) {
             complete = 1;
             enter_idle();
         }

@@ -53,6 +53,7 @@
 #include "test_ultrasonic_overtake.h"
 #include "ir_avoid_drive.h"
 #include "test_ir_avoid_drive.h"
+#include "follow_avoid.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -141,7 +142,8 @@ int main(void)
   // TestIRRemote_Init();        /* 红外遥控 */
   // TestMotor_Init();           /* 电机测试 */
   // TestEncoder_Init();          /* 编码器测试 */
-  TestLineFollow_Init();        /* 红外循迹测试 */
+  // TestLineFollow_Init();        /* 红外循迹测试 */
+  FollowAvoid_Init();           /* 循迹+超声避障综合任务 */
   // TestIRRemote_Init();           /* 红外遥控 */
   // K210Comm_Init();              /* K210通讯 */
   // TestK210Comm_Init();          /* K210路牌识别测试 */

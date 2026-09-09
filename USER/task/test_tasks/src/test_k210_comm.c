@@ -4,7 +4,9 @@
  * 薄封装：调用 VisionDrive 驱动 + OLED 状态显示
  *
  * K210 (sign_detect.py) 发送路牌指令：
- *   "$R#" → RIGHT   "$L#" → LEFT   "$S#" → STOP
+ *   "$L#" → LEFT   "$R#" → RIGHT   "$H#" → HORN   "$W#" → SLOW
+ *   "$F#" → FAST   "$D#" → RED     "$Y#" → YELLOW  "$G#" → GREEN
+ *   "$B#" → BACK   "$S#" → STOP
  *
  * 视觉驾驶行为（由 vision_drive.c 驱动）：
  *   LEFT  → 左超车 → 直行1s → 右超车 → 恢复前进
@@ -35,8 +37,15 @@ static uint16_t led_cnt  = 0;
 static const char *sign_name(char c)
 {
     switch (c) {
-    case 'R': return "RIGHT ";
     case 'L': return "LEFT  ";
+    case 'R': return "RIGHT ";
+    case 'H': return "HORN  ";
+    case 'W': return "SLOW  ";
+    case 'F': return "FAST  ";
+    case 'D': return "RED   ";
+    case 'Y': return "YELLOW";
+    case 'G': return "GREEN ";
+    case 'B': return "BACK  ";
     case 'S': return "STOP  ";
     case 'a': return "ALIVE ";
     default:  return "---   ";

@@ -42,7 +42,7 @@
 
 /* 直角/严重偏离：大拐弯 */
 #define LINE_FOLLOW_CORNER_OUTER_FORWARD    3200
-#define LINE_FOLLOW_CORNER_TURN_RATIO       81
+#define LINE_FOLLOW_CORNER_TURN_RATIO       90
 
 /* 收尾：即将转正，减小力度防过冲 */
 #define LINE_FOLLOW_SETTLE_OUTER_FORWARD    2400

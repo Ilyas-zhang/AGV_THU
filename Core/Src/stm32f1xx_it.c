@@ -44,6 +44,7 @@
 #include "test_ultrasonic_overtake.h"
 #include "ir_avoid_drive.h"
 #include "test_ir_avoid_drive.h"
+#include "follow_avoid.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -223,7 +224,8 @@ void SysTick_Handler(void)
   // TestIRAvoidDrive_Tick();        /* 红外避障驾驶 */
   // TestIRRemote_Tick();           /* 红外遥控 */
   // TestEncoder_Tick();             /* 编码器测试 */
-  TestLineFollow_Tick();           /* 红外循迹测试 */
+  // TestLineFollow_Tick();           /* 红外循迹测试 */
+  FollowAvoid_Tick();              /* 循迹+超声避障综合任务 */
   // TestVisionLineFollow_Tick();     /* 视觉循迹测试 */
   // TestIRRemote_Tick();           /* 红外遥控 */
   // TestK210Comm_Tick();              /* K210路牌识别测试 */

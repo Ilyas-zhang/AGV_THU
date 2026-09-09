@@ -10,18 +10,23 @@
 # 5. KPU 内部隐式使用 160x160 ROI
 # 6. 不使用 copy() / resize()，降低内存占用
 #
-# Class 1 = RIGHT -> UART 'R'
-# Class 2 = LEFT  -> UART 'L'
-# Class 3 = STOP  -> UART 'S'
+# Class 1 = LEFT        -> UART "$L#"
+# Class 2 = RIGHT       -> UART "$R#"
+# Class 3 = HORN        -> UART "$H#"
+# Class 4 = SLOW        -> UART "$W#"
+# Class 5 = FAST        -> UART "$F#"
+# Class 6 = RED_LIGHT   -> UART "$D#"
+# Class 7 = YELLOW_LIGHT-> UART "$Y#"
+# Class 8 = GREEN_LIGHT -> UART "$G#"
+# Class 9 = BACK_IN     -> UART "$B#"
 #
 # UART1:
 # TX = IO8
 # RX = IO6
 # 115200 8N1
 # 帧协议：$payload#（与 STM32 端 k210_comm.c 一致）
-#   K210 发送 "$R#" / "$L#" / "$S#" → STM32 接收并在 OLED 显示
+#   K210 发送 "$L#"/"$R#"/"$H#"/"$W#"/"$F#"/"$D#"/"$Y#"/"$G#"/"$B#"
 #   STM32 发送 "$alive#" → 心跳
-#   STM32 发送 "$echo:xx#" → 回显
 #
 # 模型:
 # /sd/KPU/self_learn_classifier/mb-0.25.kmodel
@@ -52,9 +57,9 @@ except:
 # 1. 基本参数
 # ============================================================
 
-CLASS_NUM = 3
+CLASS_NUM = 9
 
-PIC_PER_CLASS = 5
+PIC_PER_CLASS = 10
 
 
 # 识别阈值
@@ -99,16 +104,28 @@ MASK_COLOR = (
 # ============================================================
 
 CLASS_NAMES = [
-    "RIGHT",
     "LEFT",
-    "STOP"
+    "RIGHT",
+    "HORN",
+    "SLOW",
+    "FAST",
+    "RED",
+    "YELLOW",
+    "GREEN",
+    "BACK"
 ]
 
 
 CLASS_COMMANDS = [
-    "$R#",
     "$L#",
-    "$S#"
+    "$R#",
+    "$H#",
+    "$W#",
+    "$F#",
+    "$D#",
+    "$Y#",
+    "$G#",
+    "$B#"
 ]
 
 
