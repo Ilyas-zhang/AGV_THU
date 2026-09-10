@@ -5,15 +5,15 @@
  *
  * 路牌指令映射 (7 类):
  *   H  (鸣笛)           → 蜂鸣器响 (自动关闭)
- *   L  (左转)           → 左超车 → 直行 → 右超车 → 恢复循迹
+ *   L  (左转)           → 延缓直行 → 左旋转入岛 → 岛内循迹 → 左旋转出岛 → 恢复循迹
  *   1  (停车位类型1/PARK1) → 停车
  *   2  (停车位类型2/PARK2) → 停车
- *   R  (右转)           → 右超车 → 直行 → 左超车 → 恢复循迹
+ *   R  (右转)           → 延缓直行 → 右旋转入岛 → 岛内循迹 → 右旋转出岛 → 恢复循迹
  *   W  (限速)           → 循迹降速
- *   F  (解除限速)       → 恢复正常循迹速度
+ *   F  (解除限速)       → 恢复循迹 (速度 FV_LINE_RELEASE_SPEED)
  *
- * 超车期间不调用 LineFollow_Run。
- * 超车完成后检查黑线 → 找到直接循迹 / 脱线则旋转搜索。
+ * 环岛通行不使用 overtake 模块，直接 PWM 控制原地旋转 + 直行。
+ * 出岛旋转时传感器初始有信号，需先脱当前线再找新线。
  */
 
 #include "follow_vision.h"
@@ -22,7 +22,6 @@
 #include "line_follow.h"
 #include "k210_comm.h"
 #include "motor.h"
-#include "overtake.h"
 #include "led.h"
 #include "led_config.h"
 #include "buzz.h"
@@ -34,51 +33,29 @@
 /* ---- state machine ---- */
 
 typedef enum {
-    FV_FOLLOW,      /* 正常循迹 */
-    FV_OVT_1,       /* 第一次超车进行中 */
-    FV_FWD_WAIT,    /* 两次超车间直行 */
-    FV_OVT_2,       /* 第二次超车进行中 */
-    FV_SEARCH,      /* 脱线搜索：原地旋转找黑线 */
-    FV_SLOW,        /* 限速循迹 */
-    FV_PARK,        /* 停车 (PARK1/PARK2) */
-    FV_HORN         /* 鸣笛 (自动关闭) */
+    FV_FOLLOW,          /* 正常循迹 */
+    FV_ISLAND_DELAY,    /* 延缓期：直行接近环岛入口 */
+    FV_ISLAND_ROT1,     /* 入岛旋转：原地旋转找环岛黑线（传感器初始无信号） */
+    FV_ISLAND_FOLLOW,   /* 岛内循迹：沿环岛黑线行驶 */
+    FV_ISLAND_ROT2,     /* 出岛旋转：先脱当前线再找新线（传感器初始有信号） */
+    FV_SLOW,            /* 限速循迹 */
+    FV_PARK,            /* 停车 (PARK1/PARK2) */
+    FV_HORN             /* 鸣笛 (自动关闭) */
 } FV_State;
 
-static FV_State  fv_state    = FV_FOLLOW;
-static int8_t    fv_dir      = 0;          /* 第一次超车方向 */
-static uint16_t  phase_ms    = 0;          /* 当前阶段计时器 (ms) */
-static uint16_t  hb_cnt      = 0;          /* K210 心跳计数 (ms) */
-static char      last_sign[3] = "-";       /* 最近路牌指令 */
+static FV_State  fv_state        = FV_FOLLOW;
+static int8_t    fv_dir          = 0;          /* 环岛转向方向: -1=左, +1=右 */
+static uint16_t  phase_ms        = 0;          /* 当前阶段计时器 (ms) */
+static uint16_t  hb_cnt          = 0;          /* K210 心跳计数 (ms) */
+static char      last_sign[3]    = "-";        /* 最近路牌指令 */
+static uint16_t  fv_follow_speed = FV_LINE_BASE_SPEED; /* 当前循迹速度 */
+static uint8_t   lost_line       = 0;          /* ROT2 子状态: 0=等待脱线, 1=已脱线找新线 */
 
 /* ---- helpers ---- */
 
 static const char *fv_state_names[] = {
-    "FOLLOW", "OVT1", "FWD", "OVT2", "SEARCH", "SLOW", "PARK", "HORN"
+    "FOLLOW", "ISL_DLY", "ISL_R1", "ISL_FLW", "ISL_R2", "SLOW", "PARK", "HORN"
 };
-
-/** 用第一次超车参数覆盖 overtake 默认值 */
-static void fv_set_ovt1_config(void)
-{
-    Overtake_Config oc;
-    oc.stop_delay_ms = FV_OVT1_STOP_DELAY_MS;
-    oc.rotate_ms     = FV_OVT1_ROTATE_MS;
-    oc.pass_ms       = FV_OVT1_PASS_MS;
-    oc.rotate_speed  = FV_OVT1_ROTATE_SPEED;
-    oc.pass_speed    = FV_OVT1_PASS_SPEED;
-    Overtake_SetConfig(&oc);
-}
-
-/** 用第二次超车参数覆盖 overtake 默认值 */
-static void fv_set_ovt2_config(void)
-{
-    Overtake_Config oc;
-    oc.stop_delay_ms = FV_OVT2_STOP_DELAY_MS;
-    oc.rotate_ms     = FV_OVT2_ROTATE_MS;
-    oc.pass_ms       = FV_OVT2_PASS_MS;
-    oc.rotate_speed  = FV_OVT2_ROTATE_SPEED;
-    oc.pass_speed    = FV_OVT2_PASS_SPEED;
-    Overtake_SetConfig(&oc);
-}
 
 /** Match sign payload — all K210 commands are single-char: H/L/R/W/F/1/2 */
 static int sign_eq(const char *msg, const char *sign)
@@ -110,14 +87,15 @@ void FollowVision_Init(void)
     IRTracking_Init();
     K210Comm_Init();
     LineFollow_Init();
-    Overtake_Init();
 
-    fv_state   = FV_FOLLOW;
-    fv_dir     = 0;
-    phase_ms   = 0;
-    hb_cnt     = 0;
-    last_sign[0] = '-';
-    last_sign[1] = '\0';
+    fv_state        = FV_FOLLOW;
+    fv_dir          = 0;
+    phase_ms        = 0;
+    hb_cnt          = 0;
+    fv_follow_speed = FV_LINE_BASE_SPEED;
+    lost_line       = 0;
+    last_sign[0]    = '-';
+    last_sign[1]    = '\0';
 
 #if FV_OLED_ENABLE
     OLED_Init();
@@ -138,11 +116,6 @@ void FollowVision_Tick(void)
         K210Comm_SendFrame("alive");
     }
 
-    /* ---- 超车驱动 tick（超车进行中才推进） ---- */
-    if (fv_state == FV_OVT_1 || fv_state == FV_OVT_2) {
-        Overtake_Tick();
-    }
-
     phase_ms++;
 
     /* ---- 状态机 ---- */
@@ -150,30 +123,26 @@ void FollowVision_Tick(void)
 
     case FV_FOLLOW:
         /* 正常循迹，同时检查 K210 路牌指令 */
-        LineFollow_Run(FV_LINE_BASE_SPEED);
+        LineFollow_Run(fv_follow_speed);
 
         if (K210Comm_HasMessage()) {
             const char *msg = K210Comm_GetMessage();
             K210Comm_ClearFlag();
 
             if (sign_eq(msg, "L")) {
-                /* 左转 → 左超车 */
+                /* 左转 → 延缓直行 → 左旋转入岛 */
                 record_sign("L");
-                Overtake_Init();
-                fv_set_ovt1_config();
-                Overtake_Trigger(OVERTAKE_DIR_LEFT);
-                fv_dir = OVERTAKE_DIR_LEFT;
-                fv_state = FV_OVT_1;
+                fv_dir = -1;
+                pwm_car_forward(FV_ISLAND_FWD_SPEED);
+                fv_state = FV_ISLAND_DELAY;
                 phase_ms = 0;
 
             } else if (sign_eq(msg, "R")) {
-                /* 右转 → 右超车 */
+                /* 右转 → 延缓直行 → 右旋转入岛 */
                 record_sign("R");
-                Overtake_Init();
-                fv_set_ovt1_config();
-                Overtake_Trigger(OVERTAKE_DIR_RIGHT);
-                fv_dir = OVERTAKE_DIR_RIGHT;
-                fv_state = FV_OVT_1;
+                fv_dir = 1;
+                pwm_car_forward(FV_ISLAND_FWD_SPEED);
+                fv_state = FV_ISLAND_DELAY;
                 phase_ms = 0;
 
             } else if (sign_eq(msg, "H")) {
@@ -201,63 +170,64 @@ void FollowVision_Tick(void)
         }
         break;
 
-    case FV_OVT_1:
-        /* 第一次超车进行中 → 完成后直行超过障碍物 */
-        if (Overtake_IsComplete()) {
-            pwm_car_forward(FV_FWD_WAIT_SPEED);
-            LED_Set(LED_PRESET_FORWARD);
-            Buzz_Off();
-            fv_state = FV_FWD_WAIT;
+    case FV_ISLAND_DELAY:
+        /* 延缓期：直行接近环岛入口（pwm_car_forward 已在 FV_FOLLOW 中调用） */
+        if (phase_ms >= FV_ISLAND_DELAY_MS) {
+            /* 延缓结束 → 原地旋转找环岛黑线 */
+            if (fv_dir < 0) {
+                pwm_car_rotate_right(FV_ISLAND_ROT_SPEED);  /* 物理接线反向：代码 right = 实际左旋 */
+            } else {
+                pwm_car_rotate_left(FV_ISLAND_ROT_SPEED);   /* 物理接线反向：代码 left = 实际右旋 */
+            }
+            fv_state = FV_ISLAND_ROT1;
             phase_ms = 0;
         }
         break;
 
-    case FV_FWD_WAIT:
-        /* 两次超车间直行 → 触发反向超车 */
-        if (phase_ms >= FV_FWD_WAIT_MS) {
-            int8_t reverse_dir = (fv_dir == OVERTAKE_DIR_LEFT)
-                                 ? OVERTAKE_DIR_RIGHT
-                                 : OVERTAKE_DIR_LEFT;
-            Overtake_Init();
-            fv_set_ovt2_config();
-            Overtake_Trigger(reverse_dir);
-            fv_state = FV_OVT_2;
+    case FV_ISLAND_ROT1:
+        /* 入岛旋转：传感器初始无信号，找黑线 */
+        if (IRTracking_ReadAll() != 0x0F) {
+            /* 找到黑线 → 停止旋转 → 岛内循迹 */
+            pwm_car_stop();
+            LineFollow_Init();
+            fv_state = FV_ISLAND_FOLLOW;
             phase_ms = 0;
         }
         break;
 
-    case FV_OVT_2:
-        /* 第二次超车进行中 → 完成后检查黑线 */
-        if (Overtake_IsComplete()) {
-            /* 任意传感器检测到黑线 (0=黑线) → 直接恢复循迹 */
+    case FV_ISLAND_FOLLOW:
+        /* 岛内循迹：沿环岛黑线行驶 */
+        LineFollow_Run(FV_ISLAND_FOLLOW_SPEED);
+
+        if (phase_ms >= FV_ISLAND_RUN_MS) {
+            /* 岛内循迹结束 → 原地旋转退出环岛 */
+            if (fv_dir < 0) {
+                pwm_car_rotate_right(FV_ISLAND_ROT_SPEED);  /* 物理接线反向 */
+            } else {
+                pwm_car_rotate_left(FV_ISLAND_ROT_SPEED);   /* 物理接线反向 */
+            }
+            lost_line = 0;
+            fv_state = FV_ISLAND_ROT2;
+            phase_ms = 0;
+        }
+        break;
+
+    case FV_ISLAND_ROT2:
+        /* 出岛旋转：先脱当前线再找新线 */
+        if (!lost_line) {
+            /* 阶段1：等待脱离当前黑线 (所有传感器变白) */
+            if (IRTracking_ReadAll() == 0x0F) {
+                lost_line = 1;
+            }
+        } else {
+            /* 阶段2：寻找新黑线 */
             if (IRTracking_ReadAll() != 0x0F) {
+                /* 找到新黑线 → 停止旋转 → 恢复正常循迹 */
+                pwm_car_stop();
                 LineFollow_Init();
                 fv_state = FV_FOLLOW;
                 phase_ms = 0;
-            } else {
-                /* 脱线：原地旋转找黑线 */
-                pwm_car_rotate_left(FV_SEARCH_SPEED);  /* 物理接线反向：代码 left = 实际右旋 */
-                LED_Set(LED_PRESET_ROTATE);
-                fv_state = FV_SEARCH;
-                phase_ms = 0;
             }
-        }
-        break;
-
-    case FV_SEARCH:
-        /* 原地旋转找黑线 → 找到或超时后恢复循迹 */
-        if (IRTracking_ReadAll() != 0x0F) {
-            /* 找到黑线 → 恢复循迹 */
-            pwm_car_stop();
-            LineFollow_Init();
-            fv_state = FV_FOLLOW;
-            phase_ms = 0;
-        } else if (phase_ms >= FV_SEARCH_TIMEOUT_MS) {
-            /* 超时 → 停车，交由循迹自身脱线恢复处理 */
-            pwm_car_stop();
-            LineFollow_Init();
-            fv_state = FV_FOLLOW;
-            phase_ms = 0;
         }
         break;
 
@@ -270,9 +240,10 @@ void FollowVision_Tick(void)
             K210Comm_ClearFlag();
 
             if (sign_eq(msg, "F")) {
-                /* 解除限速 → 恢复正常循迹 */
+                /* 解除限速 → 恢复循迹 (速度 FV_LINE_RELEASE_SPEED) */
                 record_sign("F");
                 Buzz_Off();
+                fv_follow_speed = FV_LINE_RELEASE_SPEED;
                 fv_state = FV_FOLLOW;
                 phase_ms = 0;
 
@@ -305,6 +276,7 @@ void FollowVision_Tick(void)
                 /* 解除限速 / 绿灯 → 恢复循迹 */
                 record_sign("F");
                 Buzz_Off();
+                fv_follow_speed = FV_LINE_RELEASE_SPEED;
                 LineFollow_Init();
                 fv_state = FV_FOLLOW;
                 phase_ms = 0;
@@ -313,7 +285,8 @@ void FollowVision_Tick(void)
         break;
 
     case FV_HORN:
-        /* 鸣笛 → 自动关闭 */
+        /* 鸣笛 → 循迹继续，蜂鸣器自动关闭 */
+        LineFollow_Run(fv_follow_speed);
         if (phase_ms >= FV_HORN_MS) {
             Buzz_Off();
             fv_state = FV_FOLLOW;
