@@ -37,7 +37,6 @@
 #include "test_encoder.h"
 #include "irtracking.h"
 #include "test_line_follow.h"
-#include "test_vision_line_follow.h"
 #include "k210_comm.h"
 #include "test_k210_comm.h"
 #include "ultrasonic_overtake.h"
@@ -45,6 +44,7 @@
 #include "ir_avoid_drive.h"
 #include "test_ir_avoid_drive.h"
 #include "follow_avoid.h"
+#include "follow_vision.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -225,7 +225,8 @@ void SysTick_Handler(void)
   // TestIRRemote_Tick();           /* 红外遥控 */
   // TestEncoder_Tick();             /* 编码器测试 */
   // TestLineFollow_Tick();           /* 红外循迹测试 */
-  FollowAvoid_Tick();              /* 循迹+超声避障综合任务 */
+  // FollowAvoid_Tick();              /* 循迹+超声避障综合任务 */
+  FollowVision_Tick();              /* 循迹+视觉路牌综合任务 */
   // TestVisionLineFollow_Tick();     /* 视觉循迹测试 */
   // TestIRRemote_Tick();           /* 红外遥控 */
   // TestK210Comm_Tick();              /* K210路牌识别测试 */

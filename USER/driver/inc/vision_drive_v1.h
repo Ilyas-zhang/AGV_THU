@@ -1,5 +1,8 @@
 /*
- * vision_drive.h — Vision-driven driving (9-sign version)
+ * vision_drive_v1.h — Vision-driven driving (9-sign version) [LEGACY]
+ *
+ * ⚠ 旧版驱动，基于 K210 自学习分类器 (9 类)。
+ * 新版 YOLOv2 目标检测 (7 类) 驱动见 yolo_drive.h。
  *
  * Receives road sign commands from K210 via USART2 (k210_comm.c ISR):
  *   L/R → overtake, S/D/Y → stop, H → horn,
@@ -9,11 +12,11 @@
  * Requires K210Comm_Init() called beforehand for RXNE interrupt.
  */
 
-#ifndef __VISION_DRIVE_H
-#define __VISION_DRIVE_H
+#ifndef __VISION_DRIVE_V1_H
+#define __VISION_DRIVE_V1_H
 
 #include <stdint.h>
-#include "vision_drive_config.h"
+#include "vision_drive_v1_config.h"
 
 /* ---- Initialization ---- */
 
@@ -50,4 +53,4 @@ char VisionDrive_GetLastSign(void);
  */
 uint8_t VisionDrive_IsActive(void);
 
-#endif /* __VISION_DRIVE_H */
+#endif /* __VISION_DRIVE_V1_H */

@@ -14,8 +14,8 @@
 
 #include "follow_avoid.h"
 #include "follow_avoid_config.h"
-#include "line_follow.h"
 #include "irtracking.h"
+#include "line_follow.h"
 #include "ultrasonic.h"
 #include "motor.h"
 #include "overtake.h"
@@ -34,7 +34,8 @@ typedef enum {
     FA_STOP,        /* 停车等待 */
     FA_OVT_1,       /* 右超车进行中 */
     FA_WAIT,        /* 两次超车间直行 */
-    FA_OVT_2        /* 左超车进行中 */
+    FA_OVT_2,       /* 左超车进行中 */
+    FA_SEARCH       /* 脱线搜索：原地右旋找黑线 */
 } FA_State;
 
 static FA_State  fa_state    = FA_FOLLOW;
@@ -45,7 +46,7 @@ static uint16_t  trigger_cnt = 0;      /* 超声触发间隔计数器 */
 /* ---- helpers ---- */
 
 static const char *fa_state_names[] = {
-    "FOLLOW", "STOP", "OVT1", "FWD", "OVT2"
+    "FOLLOW", "STOP", "OVT1", "FWD", "OVT2", "SEARCH"
 };
 
 /** 用第一次超车参数覆盖 overtake 默认值 */
@@ -168,8 +169,34 @@ void FollowAvoid_Tick(void)
         break;
 
     case FA_OVT_2:
-        /* 左超车进行中 → 完成后恢复循迹 */
+        /* 左超车进行中 → 完成后检查黑线 */
         if (Overtake_IsComplete()) {
+            /* 任意传感器检测到黑线 (0=黑线) → 直接恢复循迹 */
+            if (IRTracking_ReadAll() != 0x0F) {
+                LineFollow_Init();
+                fa_state = FA_FOLLOW;
+                phase_ms = 0;
+            } else {
+                /* 脱线：原地右旋找黑线 */
+                pwm_car_rotate_left(FA_SEARCH_SPEED);  /* 物理接线反向：代码 left = 实际右旋 */
+                LED_Set(LED_PRESET_ROTATE);
+                fa_state = FA_SEARCH;
+                phase_ms = 0;
+            }
+        }
+        break;
+
+    case FA_SEARCH:
+        /* 原地右旋找黑线 → 找到或超时后恢复循迹 */
+        if (IRTracking_ReadAll() != 0x0F) {
+            /* 找到黑线 → 恢复循迹 */
+            pwm_car_stop();
+            LineFollow_Init();
+            fa_state = FA_FOLLOW;
+            phase_ms = 0;
+        } else if (phase_ms >= FA_SEARCH_TIMEOUT_MS) {
+            /* 超时 → 停车，交由循迹自身脱线恢复处理 */
+            pwm_car_stop();
             LineFollow_Init();
             fa_state = FA_FOLLOW;
             phase_ms = 0;

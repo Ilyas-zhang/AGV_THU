@@ -1,8 +1,11 @@
-#ifndef __VISION_DRIVE_CONFIG_H
-#define __VISION_DRIVE_CONFIG_H
+#ifndef __VISION_DRIVE_V1_CONFIG_H
+#define __VISION_DRIVE_V1_CONFIG_H
 
 /*
- * 视觉驾驶参数配置 — 9 标识版
+ * 视觉驾驶参数配置 — 9 标识版 [LEGACY]
+ *
+ * ⚠ 旧版驱动配置，基于 K210 自学习分类器 (9 类)。
+ * 新版 YOLOv2 目标检测 (7 类) 配置见 yolo_drive_config.h。
  *
  * 标识映射：
  *   L (左转)       → 左超车 → 直行 → 右超车 → 恢复
@@ -26,4 +29,4 @@
 /* ---- 超车间直行时间 (ms) ---- */
 #define VD_FWD_WAIT_MS           1000    /* 两次超车之间的直行时间 */
 
-#endif /* __VISION_DRIVE_CONFIG_H */
+#endif /* __VISION_DRIVE_V1_CONFIG_H */

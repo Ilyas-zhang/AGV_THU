@@ -45,7 +45,6 @@
 #include "encoder_config.h"
 #include "test_encoder.h"
 #include "test_line_follow.h"
-#include "test_vision_line_follow.h"
 #include "line_follow_config.h"
 #include "k210_comm.h"
 #include "test_k210_comm.h"
@@ -54,6 +53,7 @@
 #include "ir_avoid_drive.h"
 #include "test_ir_avoid_drive.h"
 #include "follow_avoid.h"
+#include "follow_vision.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -143,7 +143,8 @@ int main(void)
   // TestMotor_Init();           /* 电机测试 */
   // TestEncoder_Init();          /* 编码器测试 */
   // TestLineFollow_Init();        /* 红外循迹测试 */
-  FollowAvoid_Init();           /* 循迹+超声避障综合任务 */
+  // FollowAvoid_Init();           /* 循迹+超声避障综合任务 */
+  FollowVision_Init();           /* 循迹+视觉路牌综合任务 */
   // TestIRRemote_Init();           /* 红外遥控 */
   // K210Comm_Init();              /* K210通讯 */
   // TestK210Comm_Init();          /* K210路牌识别测试 */

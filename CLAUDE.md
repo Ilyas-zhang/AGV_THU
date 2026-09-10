@@ -8,7 +8,7 @@ Embedded firmware for **STM32F103ZET6** (ARM Cortex-M3, 72 MHz, 512K Flash, 64K 
 
 ## Currently Active Task
 
-**FollowAvoid** (`follow_avoid.c`) — line follow + ultrasonic obstacle avoid composite task.
+**FollowVision** (`follow_vision.c`) — line follow + YOLOv2 vision sign composite task.
 
 Enabled in `main.c` (`FollowAvoid_Init()`) and `stm32f1xx_it.c` (`FollowAvoid_Tick()`). All other test tasks are commented out.
 
@@ -32,7 +32,7 @@ cmake --build build
 
 **⚠️ CLion CMake Generator**：必须设为 `Ninja`（Settings → Build → CMake → Generator），否则默认 nmake 找不到会报错。
 
-**⚠️ CubeMX 重生成后**：CMakeLists.txt 首行缺 `#` 注释符，需手动添加。`include_directories` 会恢复为旧路径（缺少 `USER/config`，多出 `USER/test/Inc` 和 `USER/project`），需修正为当前值。
+**⚠️ CubeMX 重生成后**：CMakeLists.txt 首行缺 `#` 注释符，需手动添加。`include_directories` 会恢复为旧路径（缺少 `USER/config/driver`/`USER/config/main_tasks`/`USER/config/test_tasks`，多出 `USER/test/Inc` 和 `USER/project`），需修正为当前值。
 
 CMake uses `file(GLOB_RECURSE SOURCES "Core/*.*" "Drivers/*.*" "USER/*.*")` — new files under `USER/` are auto-discovered; no manual source list to update.
 
@@ -57,7 +57,10 @@ Core/
   Startup/      startup_stm32f103zetx.s
 Drivers/        STM32F1xx HAL + CMSIS (vendor-provided, do not edit)
 USER/
-  config/       *_config.h — tunable parameters for each driver (thresholds, speeds, filter constants)
+  config/
+    driver/      *_config.h — tunable parameters for each driver (thresholds, speeds, filter constants)
+    main_tasks/  *_config.h — tunable parameters for competition-level composite tasks
+    test_tasks/  *_config.h — tunable parameters for test tasks (currently empty)
   driver/
     inc/        Driver headers
     src/        Driver implementations
@@ -69,16 +72,16 @@ USER/
       inc/      Test task headers
       src/      Test task implementations (init + tick + main-loop body)
     vision_tasks/
-      sign_detect.py  K210 自学习路牌识别 (MicroPython, 9 classes)
+      sign_detect.py        K210 自学习路牌识别 (MicroPython, 9 classes) [LEGACY — 旧版自学习分类器]
+      yolo_detect.py        K210 YOLOv2 路牌检测 (MicroPython, 7 classes, UART 发送 $H#/$L#/$R#/$P1#/$P2#/$W#/$F#)
 sources/
-  main.py               K210 路牌识别 + SD卡日志 + 训练拍照 (MicroPython)
   K210视觉模块/         K210 官方教程文档 + 例程 (PDF/Py/固件)
   KPU/                  预训练 .kmodel 文件 (需复制到 K210 SD 卡 /sd/KPU/)
 ```
 
 ### Design Patterns
 
-1. **Driver / Config separation**: Every driver has a corresponding `*_config.h` in `USER/config/` with all tunable parameters. Drivers `#include` their config. This lets users tune without touching driver code.
+1. **Driver / Config separation**: Every driver has a corresponding `*_config.h` in `USER/config/driver/`, and main tasks have their config in `USER/config/main_tasks/`. All tunable parameters live in config headers; drivers/tasks `#include` their config. This lets users tune without touching driver/task code.
 
 2. **Init + Tick pattern**: All drivers expose `Xxx_Init()` and `Xxx_Tick()`. Init is called once in `main()` after CubeMX peripheral init. Tick is called from `SysTick_Handler` every 1 ms for non-blocking periodic work (filtering, state machines, timeouts). The main `while(1)` loop is **empty** — all application logic runs from SysTick ticks and ISR callbacks.
 
@@ -97,16 +100,18 @@ sources/
 9. **Overtake driver composition**: `overtake.c` is a generic overtaking state machine (STOP → ROTATE_1 → PASS → ROTATE_2 → IDLE). Higher-level drivers compose it:
    - `ultrasonic_overtake.c` — triggers overtake when ultrasonic distance ≤ threshold
    - `ir_avoid_drive.c` — triggers overtake based on IR avoid sensor readings (left obstacle → right overtake, right obstacle → left overtake)
-   - `vision_drive.c` — triggers overtake based on K210 road sign commands (LEFT sign → left overtake, RIGHT sign → right overtake)
+   - `vision_drive_v1.c` — [LEGACY] triggers overtake based on K210 road sign commands (9-class self-learning classifier)
+   - `yolo_drive.c` — triggers overtake based on K210 YOLOv2 sign commands (7-class: HORN/LEFT/PARK1/PARK2/RIGHT/SPEED_LIMIT/SPEED_RELEASE)
    - All delegate maneuver logic to `overtake.c`; their configs cover trigger-specific parameters, while maneuver timing/speed lives in `overtake_config.h`.
 
 10. **Main task composition** (`main_tasks/`): Competition-level composite behaviors that combine multiple drivers. Unlike `test_tasks/` (which test a single driver), main tasks coordinate several drivers in a priority state machine:
-   - `follow_avoid.c` — line follow + ultrasonic obstacle avoid: FOLLOW → STOP (obstacle) → left overtake → wait → right overtake → FOLLOW. Line follow runs during FOLLOW; overtake drivers take over during avoidance. Config in `follow_avoid_config.h`.
-   - **Overtake_Tick call pattern difference**: `follow_avoid.c` only calls `Overtake_Tick()` when in `FA_OVT_1`/`FA_OVT_2` states (avoids spurious ticks while line-following). `vision_drive.c` always calls `Overtake_Tick()` every 1 ms. Both work, but the conditional pattern is slightly more efficient.
-   - **Per-overtake config override**: `follow_avoid.c` uses `fa_set_ovt1_config()`/`fa_set_ovt2_config()` to inject independent parameters for each overtake via `Overtake_SetConfig()` before `Overtake_Trigger()`. This lets left and right overtakes have different rotate times/speeds to compensate for physical asymmetry. `vision_drive.c` uses overtake_config.h defaults for both.
+   - `follow_avoid.c` — line follow + ultrasonic obstacle avoid: FOLLOW → STOP (obstacle) → right overtake → wait → left overtake → SEARCH (find line) → FOLLOW. Line follow runs during FOLLOW; overtake drivers take over during avoidance. Config in `follow_avoid_config.h`.
+   - `follow_vision.c` — line follow + YOLOv2 vision sign: FOLLOW → (sign detected) → OVT_1/OVT_2/SLOW/PARK/HORN → SEARCH (find line after overtake) → FOLLOW. K210 sends 7-class YOLOv2 sign commands (H/L/R/P1/P2/W/F). LEFT/RIGHT signs trigger overtake; HORN triggers buzzer; SPEED_LIMIT reduces line follow speed; PARK1/PARK2 stops; SPEED_RELEASE resumes. Config in `follow_vision_config.h`.
+   - **Overtake_Tick call pattern difference**: `follow_avoid.c` and `follow_vision.c` only call `Overtake_Tick()` when in OVT states (avoids spurious ticks while line-following). `vision_drive_v1.c` and `yolo_drive.c` always call `Overtake_Tick()` every 1 ms. Both work, but the conditional pattern is slightly more efficient.
+   - **Per-overtake config override**: `follow_avoid.c` and `follow_vision.c` use `fa_set_ovt1_config()`/`fa_set_ovt2_config()` (or `fv_set_ovt1_config()`/`fv_set_ovt2_config()`) to inject independent parameters for each overtake via `Overtake_SetConfig()` before `Overtake_Trigger()`. This lets left and right overtakes have different rotate times/speeds to compensate for physical asymmetry. `yolo_drive.c` uses overtake_config.h defaults for both.
    - These are the real competition task entries; `test_tasks/` are for individual driver debugging.
 
-11. **P-control differential drive + three-step-turn**: `line_follow.c` uses proportional control: `corr = err × KP`, applied via `car_diff_turn(base - corr, base)` — allows inner wheel to go negative (reverse) for automatic in-place rotation at large errors. For sharp bends (middle+outer sensors both on), a three-step state machine takes over: TT_CROSS (drive past bend apex) → TT_SPIN (rotate until centered) → TT_SKIP_OUTER (crossing line handling). Lost-line recovery spins in the last direction with timeout. `car_brake()` provides energy braking (H-bridge short) at state transitions. `vision_line_follow.c` (K210) still uses the older weighted-error + EMA + Kp pattern.
+11. **Weighted position + ratio arc-turn** (`line_follow.c`): Four IR sensors produce weighted position value (−3/−1/+1/+3 averaged). Error drives ratio-based arc-turn (see pattern #12). Lost-line recovery spins in the last direction with timeout.
 
 12. **Ratio-based smooth arc-turn** (`line_follow.c`): Current version uses `outer_forward` + `turn_ratio` (0~100) instead of fixed Kp. `inner_reverse = outer_forward × ratio / 100`. Ratio 0 = pure straight, 50 = gentle arc, 100 = in-place spin. Four ratio profiles: ARC (gentle correction), CORNER (sharp bend), SETTLE (reducing overshoot), SEARCH (lost-line find). PWM slew rate limiter prevents mechanical jerk on direction reversal (fast brake → slow accel into reverse).
 
@@ -210,13 +215,13 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 
 ### ✅ 实验5：黑线循迹
 - `irtracking.c`: PF13/14/15 + PG0 四路循迹传感器，非对称去抖滤波
-- `line_follow.c`: 比率差速弧线转弯 + 三步走大拐弯 + 能耗制动
+- `line_follow.c`: 比率差速弧线转弯 + PWM slew limiter
+  - 位置计算: 四路传感器加权平均 (−3/−1/+1/+3)，得误差值
   - 比率差速: `inner_reverse = outer_forward × ratio / 100`，ratio 0~100 (0=直行, 50=温和弧线, 100=原地旋转)
-  - 误差分级: 0=居中, ±1=中间单灯微偏, ±2=仅外灯亮大偏移
-  - 三步走大拐弯: 中间两灯+外灯同亮 → TT_CROSS(越顶点) → TT_SPIN(旋转找线) → TT_SKIP_OUTER(交叉线直行)
+  - 四档 ratio: ARC (微偏修正), CORNER (大偏急转), SETTLE (减小超调), SEARCH (脱线找线)
+  - PWM slew limiter: 方向反转时快速制动→缓慢加速，避免机械冲击
   - 脱线: 按丢线前方向同向旋转找线，超时判真丢线停车
-  - 能耗制动: `car_brake()` — 8路PWM拉满=H桥短接刹车，远快于自由滑行
-  - 控制周期: 3ms (`LF_PERIOD_MS`)，由 SysTick tick 计数器模拟
+  - 控制周期: 1ms，由 SysTick tick 驱动
 
 ### ✅ 实验6：OLED显示
 - SSD1306 128×32, HAL I2C1 (PB6/PB7, addr 0x3C), 3 font sizes (7×10, 11×18, 16×26)
@@ -263,50 +268,56 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - `$payload#` 帧格式
 - **中断接收** (`k210_comm.c`): USART2 RXNE 中断逐字节解析帧，`K210Comm_IRQHandler()` 在 `USART2_IRQHandler` 中调用
 - **轮询接收** (`test_k210_comm.c`): 禁用 RXNE，SysTick 中轮询 SR 寄存器读字节解析帧
-- K210 → STM32: `$L#`/`$R#`/`$H#`/`$W#`/`$F#`/`$D#`/`$Y#`/`$G#`/`$B#` 路牌指令 (LEFT/RIGHT/HORN/SLOW/FAST/RED/YELLOW/GREEN/BACK)，`$S#` 停车，`$e<value>#` 视觉循迹误差 (value: -100~+100, 999=脱线)，`$a#` 心跳回复 (ALIVE)
+- K210 → STM32 (YOLOv2 7 类): `$L#`/`$R#`/`$H#`/`$W#`/`$F#`/`$P1#`/`$P2#` 路牌指令 (LEFT/RIGHT/HORN/SPEED_LIMIT/SPEED_RELEASE/PARK1/PARK2)，`$a#` 心跳回复 (ALIVE)
+- K210 → STM32 (旧版 9 类自学习, LEGACY): `$L#`/`$R#`/`$H#`/`$W#`/`$F#`/`$D#`/`$Y#`/`$G#`/`$B#` 路牌指令
 - STM32 → K210: `$alive#` 心跳
 - K210 端脚本:
-  - `USER/task/vision_tasks/sign_detect.py` — 自学习分类器 (mb-0.25.kmodel), 9 类 (LEFT/RIGHT/HORN/SLOW/FAST/RED/YELLOW/GREEN/BACK), 连续 STABLE_FRAMES 帧确认后发送, REARM_FRAMES 帧后重触发
-  - `sources/main.py` — 同上 + SD卡训练拍照保存 + 运行日志 + UART 连通测试启动画面
+  - `USER/task/vision_tasks/yolo_detect.py` — YOLOv2 目标检测 (det.kmodel), 7 类 (HORN/LEFT/PARK1/PARK2/RIGHT/SPEED_LIMIT/SPEED_RELEASE), 连续 STABLE_FRAMES 帧确认后发送, REARM_FRAMES 帧后重触发, UART 发送 `$H#`/`$L#`/`$P1#`/`$P2#`/`$R#`/`$W#`/`$F#`
+  - `USER/task/vision_tasks/sign_detect.py` — [LEGACY] 自学习分类器 (mb-0.25.kmodel), 9 类 (LEFT/RIGHT/HORN/SLOW/FAST/RED/YELLOW/GREEN/BACK)
   - KPU 模型 `sources/KPU/self_learn_classifier/mb-0.25.kmodel` 需复制到 K210 TF 卡 `/sd/KPU/` 目录
+  - YOLOv2 模型 `sources/K210 NEW2.zip` 内含 `det.kmodel` (584744 字节), 需用 kflash_gui 烧录到 K210 Flash 0x300000 地址，或复制到 SD 卡 `/sd/det.kmodel`
   - K210 UART1: TX=IO8, RX=IO6, 115200 8N1
 - OLED 显示路牌结果
 
 ### ✅ 视觉驾驶（Vision Drive）— 9 标识版
-- `vision_drive.c`: K210 路牌指令触发驾驶行为（9 种标识）
+- `yolo_drive.c`: K210 YOLOv2 路牌指令触发驾驶行为（7 种标识）
   - LEFT (L) 路牌 → 左超车 → 直行 1s → 右超车 → 恢复前进
   - RIGHT (R) 路牌 → 右超车 → 直行 1s → 左超车 → 恢复前进
-  - HORN (H) → 蜂鸣器响
-  - SLOW (W) → 降速行驶
-  - FAST (F) → 恢复正常速度
-  - RED_LIGHT (D) / YELLOW_LIGHT (Y) → 停车
-  - GREEN_LIGHT (G) → 通行/恢复
-  - BACK_IN (B) → 倒车
+  - HORN (H) → 蜂鸣器响（自动关闭 1s）
+  - SPEED_LIMIT (W) → 降速行驶
+  - SPEED_RELEASE (F) → 恢复正常速度
+  - PARK1 (P1) / PARK2 (P2) → 停车
   - 超车机动委托 `overtake.c`，参数在 `overtake_config.h`
-- 状态机: IDLE → OVT_1 → FWD_WAIT → OVT_2 → IDLE / STOPPED / SLOW / BACKING
-- 参数: `vision_drive_config.h` (速度档位/超车间直行时间)
-
-### ✅ 视觉循迹（Vision Line Follow）
-- `vision_line_follow.c`: K210 摄像头检测黑线位置，通过 UART 发送误差值
+- 状态机: IDLE → OVT_1 → FWD_WAIT → OVT_2 → IDLE / STOPPED / SLOW / HORN
+- 参数: `yolo_drive_config.h` (速度档位/超车间直行时间/鸣笛时长)
+- `vision_drive_v1.c`: [LEGACY] K210 路牌指令触发驾驶行为（9 种标识, 旧版自学习分类器）
 
 ### ✅ 循迹+超声避障综合任务（Follow Avoid）
 - `follow_avoid.c`: 红外循迹 + 超声避障组合驾驶（`main_tasks/` 竞赛级任务）
   - 正常循迹行驶 → 超声检测障碍物
   - 距离 ≤ WARN (30cm) → 循迹降速
-  - 距离 ≤ STOP (15cm) → 停车 0.5s → 左超车 → 等 1s → 右超车 → 恢复循迹
+  - 距离 ≤ STOP (15cm) → 停车 0.5s → 右超车 → 等 2s → 左超车 → 旋转找线 → 恢复循迹
   - 避障期间暂停循迹，超车机动委托 `overtake.c`
-- 参数: `follow_avoid_config.h` (超声阈值/时序/循迹速度/OLED)
-- 当前默认启用任务（`FollowAvoid_Init()` / `FollowAvoid_Tick()`）
-  - K210 → STM32: `$e<value>#`，value: -100~+100 (负=偏左, 正=偏右), 999=脱线
-  - STM32 接收后经 EMA 滤波 (α=0.25)，Kp 比例差速
-  - 脱线/通讯超时 → 按上次误差方向旋转找回
-  - STM32 → K210: `$alive#` 心跳 (每 1s)
-- 测试任务: `test_vision_line_follow.c`
-- 参数: `vision_line_follow_config.h` (速度/Kp/EMA/脱线旋转/通讯超时/显示刷新)
+  - 旋转找线 (FA_SEARCH): 超车后原地旋转寻找黑线，超时 3s 则停车
+- 参数: `follow_avoid_config.h` (超声阈值/时序/循迹速度/超车方向/找线超时/OLED)
+
+### ✅ 循迹+视觉路牌综合任务（Follow Vision）
+- `follow_vision.c`: 红外循迹 + YOLOv2 视觉路牌组合驾驶（`main_tasks/` 端赛级任务）
+  - 正常循迹行驶 → K210 路牌指令触发动作
+  - LEFT (L) → 左超车 → 直行 → 右超车 → 旋转找线 → 恢复循迹
+  - RIGHT (R) → 右超车 → 直行 → 左超车 → 旋转找线 → 恢复循迹
+  - HORN (H) → 蜂鸣器响（自动关闭 1s）→ 恢复循迹
+  - SPEED_LIMIT (W) → 循迹降速
+  - SPEED_RELEASE (F) → 恢复正常循迹速度
+  - PARK1 (P1) / PARK2 (P2) → 停车
+  - 超车机动委托 `overtake.c`，K210 通讯通过 `k210_comm.c`
+  - 旋转找线 (FV_SEARCH): 超车后原地旋转寻找黑线，超时 3s 则恢复循迹
+- 参数: `follow_vision_config.h` (循迹速度/超车参数/鸣笛/心跳/找线超时/OLED)
+- 当前默认启用任务（`FollowVision_Init()` / `FollowVision_Tick()`）
 
 ### Driver ↔ Config ↔ Test Quick Reference
 
-| Driver (`driver/src/`) | Config (`config/`) | Test Task (`test_tasks/src/`) |
+| Driver (`driver/src/`) | Config (`config/driver/`) | Test Task (`test_tasks/src/`) |
 |---|---|---|
 | `motor.c` | `motor_config.h` | `test_motor.c`, `test_motor_gpio.c` |
 | `line_follow.c` | `line_follow_config.h` | `test_line_follow.c` |
@@ -316,12 +327,14 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 | `ultrasonic_overtake.c` | `ultrasonic_overtake_config.h` | `test_ultrasonic_overtake.c` |
 | `ir_avoid.c` | `ir_avoid_config.h` | `test_ir_avoid.c` |
 | `ir_avoid_drive.c` | `ir_avoid_drive_config.h` | `test_ir_avoid_drive.c` |
-| `vision_drive.c` | `vision_drive_config.h` | `test_k210_comm.c` (thin wrapper) |
-| `vision_line_follow.c` | `vision_line_follow_config.h` | `test_vision_line_follow.c` |
-| `follow_avoid.c` *(main_tasks)* | `follow_avoid_config.h` | *(competition task — enable directly in main.c)* |
+| `yolo_drive.c` | `yolo_drive_config.h` | *(composed)* |
+| `vision_drive_v1.c` *(legacy)* | `vision_drive_v1_config.h` | `test_k210_comm.c` (thin wrapper) |
+| `follow_avoid.c` *(main_tasks)* | `follow_avoid_config.h` *(config/main_tasks/)* | *(competition task — enable directly in main.c)* |
+| `follow_vision.c` *(main_tasks)* | `follow_vision_config.h` *(config/main_tasks/)* | *(competition task — enable directly in main.c)* |
 | `ir_remote.c` | `ir_remote_config.h` | `test_ir_remote.c` |
 | `k210_comm.c` | `k210_comm_config.h` | `test_k210_comm.c` |
 | `ultrasonic.c` | `ultrasonic_config.h` | `test_ultrasonic.c` |
+| `ultrasonic_speed.c` | *(none)* | *(via test_ultrasonic)* |
 | `encoder.c` | `encoder_config.h` | `test_encoder.c` |
 | `oled.c` | *(none)* | `test_oled.c` |
 | `led.c` | `led_config.h` | *(via other tests)* |
@@ -339,11 +352,11 @@ Also uncomment any driver Tick calls that the test depends on (e.g. `IRTracking_
 - Ultrasonic 和 IR remote 共用 DWT CYCCNT；`IRRemote_Init()` 检测计数器已启用则跳过重置，避免冲突
 - Motor3/4 和 Encoder1/2 物理接线反转，由 `MOTOR3_REVERSE=1`/`MOTOR4_REVERSE=1`/`ENCODER1_REVERSE=1`/`ENCODER2_REVERSE=1` 在 config 中逻辑反转
 - PA3 (USART2_RX) 物理损坏：USART2 已通过 AFIO 重映射到 PD5(TX)/PD6(RX)。`.ioc` 已配置 PD4(RTS)/PD5(TX)/PD6(RX) + `__HAL_AFIO_REMAP_USART2_ENABLE()`，CubeMX 生成代码直接处理，USER CODE 块为空。K210 接线必须连到 PD5/PD6。
-- `test_k210_comm.c` 现在是 `vision_drive.c` 的薄封装测试（K210Comm 中断接收 + VisionDrive 状态机 + OLED 显示），不再自己轮询接收。如需纯 K210 通讯测试（轮询接收版），需恢复旧代码。
+- `test_k210_comm.c` 现在是 `vision_drive_v1.c` 的薄封装测试（K210Comm 中断接收 + VisionDrive 状态机 + OLED 显示），不再自己轮询接收。如需纯 K210 通讯测试（轮询接收版），需恢复旧代码。
 - ~~`overtake.h` 注释称状态名为 `"RL"/"RR"`~~ — 已修正，header 与实现一致返回 `"ROT1"/"ROT2"`
 - `line_follow.c` 方向映射：`pwm_car_rotate_left()` 实际向右旋，`pwm_car_rotate_right()` 实际向左旋（与专家 `car_spin_left/right` 一致，实车核定）
-- CMakeLists.txt `include_directories` 含两个不存在的路径 `USER/test/Inc` 和 `USER/project`（CubeMX 重生成残留，每次重生成后需修正）
-- `ultrasonic_speed.c/h`：超声测速驱动（Δdistance/Δtime + EMA 滤波），已存在但未被任何 test task 使用
+- CMakeLists.txt `include_directories` 含两个不存在的路径 `USER/test/Inc` 和 `USER/project`（CubeMX 重生成残留，仅重生成后出现，当前工作副本已修正。每次重生成后需再次修正），且缺少 `USER/config/driver`/`USER/config/main_tasks`/`USER/config/test_tasks`
+- `ultrasonic_speed.c/h`：超声测速驱动（Δdistance/Δtime + EMA 滤波），由 `test_ultrasonic.c` 调用
 - `FollowAvoid_Init()` 内部调用 Motor_Init/IRTracking_Init/Ultrasonic_Init/LineFollow_Init/Overtake_Init，与 main.c 中的同类 Init 调用重复。重复初始化对 HAL 无害，但启用 FollowAvoid 时可注释掉 main.c 中对应的单独 Init 调用以避免混淆。
 - IR avoid emitters 为 active-LOW：`IRAvoid_EmitterOn()` 写 `GPIO_PIN_RESET`，`EmitterOff()` 写 `GPIO_PIN_SET`
 - `sign_detect.py` 启动画面 (state 0) 仍显示旧的 3 类名称 "C1 RIGHT / C2 LEFT / C3 STOP"，与实际 `CLASS_NAMES` 数组 (9 类: LEFT/RIGHT/HORN/SLOW/FAST/RED/YELLOW/GREEN/BACK) 不一致。不影响功能，仅 LCD 显示文字过时。

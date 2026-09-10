@@ -1,5 +1,9 @@
 /*
- * vision_drive.c — Vision-driven driving (9-sign version)
+ * vision_drive_v1.c — Vision-driven driving (9-sign version) [LEGACY]
+ *
+ * ⚠ 旧版驱动，基于 K210 自学习分类器 (9 类)。
+ * 新版 YOLOv2 目标检测 (7 类) 驱动见 yolo_drive.c。
+ *
  *
  * Receives road sign commands from K210 via USART2 (k210_comm.c ISR):
  *   L (左转)       → 左超车 → 直行 → 右超车 → 恢复
@@ -22,7 +26,7 @@
  *   VD_BACKING  → reversing (BACK sign)
  */
 
-#include "vision_drive.h"
+#include "vision_drive_v1.h"
 #include "overtake.h"
 #include "k210_comm.h"
 #include "motor.h"

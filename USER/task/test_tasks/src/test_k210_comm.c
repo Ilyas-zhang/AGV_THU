@@ -8,7 +8,7 @@
  *   "$F#" → FAST   "$D#" → RED     "$Y#" → YELLOW  "$G#" → GREEN
  *   "$B#" → BACK   "$S#" → STOP
  *
- * 视觉驾驶行为（由 vision_drive.c 驱动）：
+ * 视觉驾驶行为（由 vision_drive_v1.c 驱动）[LEGACY 9-class version]：
  *   LEFT  → 左超车 → 直行1s → 右超车 → 恢复前进
  *   RIGHT → 右超车 → 直行1s → 左超车 → 恢复前进
  *   STOP  → 停车
@@ -18,7 +18,7 @@
  */
 
 #include "test_k210_comm.h"
-#include "vision_drive.h"
+#include "vision_drive_v1.h"
 #include "oled.h"
 #include "led.h"
 #include "led_config.h"
