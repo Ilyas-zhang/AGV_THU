@@ -1,16 +1,11 @@
 /*
  * k210_comm.c — STM32 ↔ K210 串口通讯驱动 (USART2)
  *
- *   帧协议：$payload#
- *     K210 发送 "$hello#" → STM32 收到后 payload = "hello"
- *     STM32 发送 "$world#" → K210 收到后解析同理
+ *   裸字符模式：K210 直接发送单字符命令 (L/R/H/W/F/1/2)
+ *   STM32 RXNE 中断收到字符即置位，无需帧协议解析
  *
- *   接收：USART2 RX 中断驱动，逐字节送入帧解析器
- *     - 收到 '$'：开始新帧，清空缓冲
- *     - 收到 '#'：帧结束，置位标志
- *     - 其他字符：存入缓冲（溢出则丢弃）
- *
- *   发送：轮询阻塞（HAL_UART_Transmit），适用于低频场景
+ *   发送：仍保留 $payload# 帧格式（STM32→K210 心跳等）
+ *   接收：裸字符，收到即生效，最低延时
  */
 
 #include "k210_comm.h"
@@ -19,10 +14,8 @@
 
 /* ---- private state ---- */
 
-static char    rx_buf[K210_RX_BUF_SIZE + 1];  /* +1 for null terminator */
-static uint8_t rx_index   = 0;     /* 当前写入位置 */
-static uint8_t rx_flag    = 0;     /* 1 = 帧起始 '$' 已收到，正在接收 */
-static volatile uint8_t msg_ready = 0;   /* 1 = 完整帧已就绪 */
+static char    rx_buf[2];                /* 单字符 + null terminator */
+static volatile uint8_t msg_ready = 0;  /* 1 = 新字符已就绪 */
 volatile uint16_t k210_rx_byte_cnt = 0;  /* DEBUG: 收到的总字节数 */
 
 /* ========== 初始化 ========== */
@@ -33,17 +26,16 @@ void K210Comm_Init(void)
     __HAL_UART_ENABLE_IT(&huart2, UART_IT_RXNE);
 
     /* 清空状态 */
-    rx_index   = 0;
-    rx_flag    = 0;
     msg_ready  = 0;
     rx_buf[0]  = '\0';
+    rx_buf[1]  = '\0';
 }
 
 /* ========== 发送 ========== */
 
 void K210Comm_SendByte(uint8_t data)
 {
-    HAL_UART_Transmit(&huart2, &data, 1, K210_TX_BYTE_TIMEOUT);   /* timeout from config */
+    HAL_UART_Transmit(&huart2, &data, 1, K210_TX_BYTE_TIMEOUT);
 }
 
 void K210Comm_SendString(const char *str)
@@ -62,7 +54,7 @@ void K210Comm_SendFrame(const char *payload)
     K210Comm_SendByte('#');
 }
 
-/* ========== 接收：帧解析器 ========== */
+/* ========== 接收：裸字符 ========== */
 
 void K210Comm_IRQHandler(void)
 {
@@ -71,29 +63,14 @@ void K210Comm_IRQHandler(void)
     /* 读取接收到的字节 */
     if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_RXNE) == RESET) return;
     ch = (uint8_t)(huart2.Instance->DR & 0xFF);
-    k210_rx_byte_cnt++;  /* DEBUG */
+    k210_rx_byte_cnt++;
 
-    if (ch == '$') {
-        /* 帧起始：清空缓冲，开始接收 */
-        rx_index = 0;
-        rx_flag  = 1;
-        rx_buf[0] = '\0';
-    } else if (rx_flag && ch == '#') {
-        /* 帧结束：null 终止，置位就绪 */
-        rx_buf[rx_index] = '\0';
-        rx_flag    = 0;
-        msg_ready  = 1;
-    } else if (rx_flag) {
-        /* 帧内数据：存入缓冲 */
-        if (rx_index < K210_RX_BUF_SIZE) {
-            rx_buf[rx_index++] = (char)ch;
-        } else {
-            /* 缓冲溢出：丢弃当前帧 */
-            rx_flag  = 0;
-            rx_index = 0;
-        }
+    /* 直接存储为单字符消息，忽略 '$' '#' 等帧协议字符 */
+    if (ch != '$' && ch != '#') {
+        rx_buf[0] = (char)ch;
+        rx_buf[1] = '\0';
+        msg_ready = 1;
     }
-    /* 非帧内字节（rx_flag=0 且不是 '$'）：忽略 */
 }
 
 /* ========== 接收：查询接口 ========== */

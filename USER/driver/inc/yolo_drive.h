@@ -3,7 +3,7 @@
  *
  * Receives road sign commands from K210 via USART2 (k210_comm.c ISR):
  *   H  → horn (auto-off),  L/R → overtake,
- *   P1/P2 → stop,  W → slow,  F → resume
+ *   1/2 (PARK1/PARK2) → stop,  W → slow,  F → resume
  *
  * Call YoloDrive_Init() once, YoloDrive_Tick() from SysTick every 1 ms.
  * Requires K210Comm_Init() called beforehand for RXNE interrupt.
@@ -41,7 +41,7 @@ const char *YoloDrive_GetDetailStateName(void);
 
 /**
  * @brief  Get last received sign payload string.
- * @retval "H","L","R","P1","P2","W","F", or "-" if none.
+ * @retval "H","L","R","1","2","W","F", or "-" if none.
  */
 const char *YoloDrive_GetLastSign(void);
 

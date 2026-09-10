@@ -2,24 +2,24 @@
 # K210 / CanMV
 # YOLOv2 路牌目标检测 + UART 控制
 #
-# 模型: det.kmodel (YOLOv2, 7 类)
+# 模型: det.kmodel (YOLOv2, 7 类, K210 SUPER 版)
 # 类别:
-#   0 = HORN         -> UART "$H#"
-#   1 = LEFT         -> UART "$L#"
-#   2 = PARK1        -> UART "$P1#"
-#   3 = PARK2        -> UART "$P2#"
-#   4 = RIGHT        -> UART "$R#"
-#   5 = SPEED_LIMIT  -> UART "$W#"
-#   6 = SPEED_RELEASE-> UART "$F#"
+#   0 = HORN         -> UART 'H'
+#   1 = LEFT         -> UART 'L'
+#   2 = PARK1        -> UART '1'
+#   3 = PARK2        -> UART '2'
+#   4 = RIGHT        -> UART 'R'
+#   5 = SPEED_LIMIT  -> UART 'W'
+#   6 = SPEED_RELEASE-> UART 'F'
 #
 # UART1:
 #   TX = IO8
 #   RX = IO6
 #   115200 8N1
-#   帧协议: $payload#（与 STM32 端 k210_comm.c 一致）
+#   裸字符模式：直接发单字符，无帧协议，最低延时
 #
 # 模型加载方式 (二选一):
-#   Flash: kpu.load_kmodel(0x300000, 584744)
+#   Flash: kpu.load_kmodel(0x300000, 581672)
 #   SD卡:  kpu.load_kmodel('/sd/det.kmodel')
 # ============================================================
 
@@ -47,7 +47,7 @@ MODEL_PATH = '/sd/det.kmodel'
 
 # 或从 Flash 加载 (需先用 kflash_gui 烧录 det.kmodel 到该地址):
 # MODEL_ADDR   = 0x300000
-# MODEL_SIZE   = 584744
+# MODEL_SIZE   = 581672
 
 
 # ---- YOLOv2 ----
@@ -62,13 +62,13 @@ LABELS = [
     "SPEED_RELEASE",    # 6
 ]
 
-# Anchors (anchor.txt 第 2 行, 归一化值)
+# Anchors (K210 SUPER anchor.txt 第 2 行, 归一化值)
 ANCHOR = (
-    1.66, 1.52,
-    2.42, 2.04,
-    2.97, 2.81,
-    3.97, 3.16,
-    5.58, 4.68,
+    1.67, 1.47,
+    2.20, 2.09,
+    2.97, 2.47,
+    3.56, 3.13,
+    5.53, 4.54,
 )
 
 YOLO_THRESHOLD = 0.6
@@ -85,29 +85,29 @@ LAYER_H = 8
 # ---- 稳定检测 ----
 
 # 连续多少帧检测到同一类才发送命令
-STABLE_FRAMES = 3
+STABLE_FRAMES = 1
 
 # 一个路牌离开多少帧以后允许再次触发
-REARM_FRAMES = 8
+REARM_FRAMES = 3
 
 
 # ---- UART 发送间隔 (ms) ----
 
-SEND_INTERVAL_MS = 100
+SEND_INTERVAL_MS = 20
 
 
 # ============================================================
-# 2. 类别 → UART 命令映射
+# 2. 类别 → UART 命令映射 (裸字符)
 # ============================================================
 
 CLASS_COMMANDS = [
-    "$H#",      # 0 = HORN
-    "$L#",      # 1 = LEFT
-    "$P1#",     # 2 = PARK1
-    "$P2#",     # 3 = PARK2
-    "$R#",      # 4 = RIGHT
-    "$W#",      # 5 = SPEED_LIMIT
-    "$F#",      # 6 = SPEED_RELEASE
+    "H",    # 0 = HORN
+    "L",    # 1 = LEFT
+    "1",    # 2 = PARK1
+    "2",    # 3 = PARK2
+    "R",    # 4 = RIGHT
+    "W",    # 5 = SPEED_LIMIT
+    "F",    # 6 = SPEED_RELEASE
 ]
 
 
@@ -132,9 +132,9 @@ sensor.set_framesize(sensor.QVGA)
 
 sensor.set_vflip(True)       # 翻转摄像头
 
-sensor.set_hmirror(True)     # 镜像摄像头
+sensor.set_hmirror(False)    # 关闭水平镜像
 
-sensor.skip_frames(time=2000)
+sensor.skip_frames(time=1000)
 
 clock = time.clock()
 
@@ -162,7 +162,7 @@ uart_A = UART(
 
 print("")
 print("================================")
-print("YOLO DETECT + UART")
+print("YOLO DETECT + UART (RAW)")
 print("UART1 115200 8N1")
 print("TX=IO8  RX=IO6")
 print("================================")
@@ -201,7 +201,7 @@ kpu.init_yolo2(
 
 
 # ============================================================
-# 7. UART 发送
+# 7. UART 发送 (裸字符)
 # ============================================================
 
 def send_command(class_index):
@@ -212,16 +212,11 @@ def send_command(class_index):
 
     uart_A.write(command)
 
-    print("")
-    print("================================")
-    print("DETECTED:", name)
-    print("SEND ->", command)
-    print("================================")
-    print("")
+    print("[%s] -> %s" % (name, command))
 
 
 # ============================================================
-# 8. STM32 返回数据 ($payload# 帧协议解析)
+# 8. STM32 返回数据 (帧协议解析, 仅用于心跳)
 # ============================================================
 
 RX_BUF_SIZE = 64
@@ -304,8 +299,11 @@ for i, name in enumerate(LABELS):
     print("  Class %d = %s" % (i, name))
 print("")
 print("7 classes, YOLOv2")
-print("Threshold: %.1f" % YOLO_THRESHOLD)
-print("NMS: %.1f" % YOLO_NMS)
+print("Threshold: %.2f" % YOLO_THRESHOLD)
+print("NMS: %.2f" % YOLO_NMS)
+print("Stable: %d frames" % STABLE_FRAMES)
+print("Rearm: %d frames" % REARM_FRAMES)
+print("Send interval: %d ms" % SEND_INTERVAL_MS)
 print("")
 print("================================")
 print("")
@@ -393,7 +391,7 @@ while True:
         if unknown_count >= REARM_FRAMES:
 
             if sign_locked:
-                print("READY FOR NEXT SIGN")
+                print("READY")
 
             sign_locked = False
 

@@ -6,8 +6,8 @@
  * 路牌指令映射 (7 类):
  *   H  (鸣笛)           → 蜂鸣器响 (自动关闭)
  *   L  (左转)           → 左超车 → 直行 → 右超车 → 恢复循迹
- *   P1 (停车位类型1)    → 停车
- *   P2 (停车位类型2)    → 停车
+ *   1  (停车位类型1/PARK1) → 停车
+ *   2  (停车位类型2/PARK2) → 停车
  *   R  (右转)           → 右超车 → 直行 → 左超车 → 恢复循迹
  *   W  (限速)           → 循迹降速
  *   F  (解除限速)       → 恢复正常循迹速度
@@ -80,7 +80,7 @@ static void fv_set_ovt2_config(void)
     Overtake_SetConfig(&oc);
 }
 
-/** Match sign payload — supports single-char (H/L/R/W/F) and multi-char (P1/P2) */
+/** Match sign payload — all K210 commands are single-char: H/L/R/W/F/1/2 */
 static int sign_eq(const char *msg, const char *sign)
 {
     int i = 0;
@@ -189,8 +189,8 @@ void FollowVision_Tick(void)
                 fv_state = FV_SLOW;
                 phase_ms = 0;
 
-            } else if (sign_eq(msg, "P1") || sign_eq(msg, "P2")) {
-                /* 停车 (PARK1/PARK2) */
+            } else if (sign_eq(msg, "1") || sign_eq(msg, "2")) {
+                /* 停车 (PARK1/PARK2) — K210 裸字符: 1=PARK1, 2=PARK2 */
                 record_sign(msg);
                 pwm_car_stop();
                 LED_Set(LED_PRESET_STOP);
@@ -276,8 +276,8 @@ void FollowVision_Tick(void)
                 fv_state = FV_FOLLOW;
                 phase_ms = 0;
 
-            } else if (sign_eq(msg, "P1") || sign_eq(msg, "P2")) {
-                /* 停车 */
+            } else if (sign_eq(msg, "1") || sign_eq(msg, "2")) {
+                /* 停车 (PARK1/PARK2) — K210 裸字符: 1=PARK1, 2=PARK2 */
                 record_sign(msg);
                 pwm_car_stop();
                 LED_Set(LED_PRESET_STOP);

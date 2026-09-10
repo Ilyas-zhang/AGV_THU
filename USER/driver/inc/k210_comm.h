@@ -1,17 +1,14 @@
 /*
  * k210_comm.h — STM32 ↔ K210 串口通讯驱动 (USART2)
  *
- * 帧格式：$payload#  （与 K210 端一致）
- *   $ = 帧起始标记
- *   payload = 有效数据（不含 $ 和 #）
- *   # = 帧结束标记
+ * 接收：裸字符模式，K210 直接发单字符命令 (L/R/H/W/F/1/2)
+ *       RXNE 中断收到即置位，最低延时
  *
- * 接收：中断驱动，自动解析 $...# 帧
- * 发送：轮询发送（HAL_UART_Transmit 阻塞，适用于低频发送）
+ * 发送：仍用 $payload# 帧格式（STM32→K210 心跳等）
  *
- * USART2 配置（需在 CubeMX 中启用）：
+ * USART2 配置：
  *   Baud: 115200, 8N1
- *   TX: PA2, RX: PA3（默认无重映射）
+ *   重映射到 PD5(TX)/PD6(RX)
  *   全局中断: 使能
  */
 
@@ -44,7 +41,7 @@ void K210Comm_SendString(const char *str);
 
 /**
  * @brief  以 $...# 帧格式发送 payload（阻塞）。
- *         例如 K210Comm_SendFrame("hello") 发送 "$hello#"
+ *         例如 K210Comm_SendFrame("alive") 发送 "$alive#"
  */
 void K210Comm_SendFrame(const char *payload);
 
@@ -52,22 +49,20 @@ void K210Comm_SendFrame(const char *payload);
 
 /**
  * @brief  USART2 接收中断处理。
- *         从 USART2 读取 1 字节，送入帧解析器。
+ *         从 USART2 读取 1 字节，直接存储为消息。
  *         需在 USART2_IRQHandler 中调用。
  */
 void K210Comm_IRQHandler(void);
 
 /**
- * @brief  查询是否有完整的接收帧。
+ * @brief  查询是否有新的接收字符。
  * @retval 1 = 有新消息可读，0 = 无
- *         调用后不清除标志（需手动调 K210Comm_ClearFlag）。
  */
 uint8_t K210Comm_HasMessage(void);
 
 /**
- * @brief  获取最近接收帧的 payload（不含 $ #）。
- * @retval 指向内部缓冲区的字符串，null 结尾。
- *         下次收到新帧后会被覆盖。
+ * @brief  获取最近接收的字符。
+ * @retval 指向内部缓冲区的字符串（单字符 + null）。
  */
 const char *K210Comm_GetMessage(void);
 
@@ -77,6 +72,6 @@ const char *K210Comm_GetMessage(void);
 void K210Comm_ClearFlag(void);
 
 /* ---- DEBUG ---- */
-extern volatile uint16_t k210_rx_byte_cnt;  /* USART2 收到的总字节数 */
+extern volatile uint16_t k210_rx_byte_cnt;
 
 #endif /* __K210_COMM_H */

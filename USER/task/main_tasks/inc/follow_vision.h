@@ -7,7 +7,7 @@
  *   HORN  → 鸣笛（自动关闭）
  *   SPEED_LIMIT  → 循迹降速
  *   SPEED_RELEASE→ 恢复正常循迹速度
- *   PARK1/PARK2  → 停车
+ *   PARK1/PARK2 (1/2) → 停车
  *
  * Call FollowVision_Init() once, FollowVision_Tick() from SysTick every 1 ms.
  * Requires K210Comm_Init() called beforehand for RXNE interrupt.
@@ -31,7 +31,7 @@ const char *FollowVision_GetStateName(void);
 
 /**
  * @brief  Get last received K210 sign payload.
- * @retval "L","R","H","W","F","P1","P2", or "-" if none.
+ * @retval "L","R","H","W","F","1","2", or "-" if none.
  */
 const char *FollowVision_GetLastSign(void);
 

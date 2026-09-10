@@ -4,8 +4,8 @@
  * Receives road sign commands from K210 via USART2 (k210_comm.c ISR):
  *   H  (鸣笛)           → 蜂鸣器响 (自动关闭)
  *   L  (左转)           → 左超车 → 直行 → 右超车 → 恢复
- *   P1 (停车位类型1)    → 停车
- *   P2 (停车位类型2)    → 停车
+ *   1  (停车位类型1/PARK1) → 停车
+ *   2  (停车位类型2/PARK2) → 停车
  *   R  (右转)           → 右超车 → 直行 → 左超车 → 恢复
  *   W  (限速)           → 降速行驶
  *   F  (解除限速)       → 恢复正常速度
@@ -59,7 +59,7 @@ static void start_maneuver(int8_t direction)
     Overtake_Trigger(direction);
 }
 
-/** Match sign payload — supports single-char (H/L/R/W/F) and multi-char (P1/P2) */
+/** Match sign payload — all K210 commands are single-char: H/L/R/W/F/1/2 */
 static int sign_eq(const char *msg, const char *sign)
 {
     /* Compare up to sign length */
@@ -185,8 +185,8 @@ void YoloDrive_Tick(void)
                 record_sign("R");
                 start_maneuver(OVERTAKE_DIR_RIGHT);
 
-            } else if (sign_eq(msg, "P1") || sign_eq(msg, "P2")) {
-                /* 停车 (PARK1 / PARK2) → 停车 */
+            } else if (sign_eq(msg, "1") || sign_eq(msg, "2")) {
+                /* 停车 (PARK1/PARK2) — K210 裸字符: 1=PARK1, 2=PARK2 */
                 record_sign(msg);
                 pwm_car_stop();
                 LED_Set(LED_PRESET_STOP);
