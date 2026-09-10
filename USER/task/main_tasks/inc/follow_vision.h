@@ -1,18 +1,26 @@
 /*
  * follow_vision.h — 循迹 + 视觉路牌综合任务
  *
- * 正常循迹行驶，K210 YOLOv2 路牌识别触发驾驶行为：
- *   LEFT  → 延缓直行 → 左旋转入岛 → 岛内循迹 → 左旋转出岛 → 恢复循迹
- *   RIGHT → 延缓直行 → 右旋转入岛 → 岛内循迹 → 右旋转出岛 → 恢复循迹
- *   HORN  → 鸣笛（自动关闭）
- *   SPEED_LIMIT  → 循迹降速
- *   SPEED_RELEASE→ 恢复循迹 (速度 FV_LINE_RELEASE_SPEED)
- *   PARK1/PARK2 (1/2) → 停车
+ * 入环岛：三层保险
+ *   K210 只提前发送方向并打开转向灯；
+ *   编码器走过最小距离后才"解锁"路口检测；
+ *   真正到路口以后 FollowVision 暂时独占电机：
  *
- * Call FollowVision_Init() once, FollowVision_Tick() from SysTick every 1 ms.
- * Requires K210Comm_Init() called beforehand for RXNE interrupt.
+ *     正常循迹
+ *       -> 收到 L/R，亮灯但继续循迹
+ *       -> 编码器空间门控解锁
+ *       -> 方向相关宽路口 / 稳定全白被确认
+ *       -> 停车 1s
+ *       -> 按 L/R 原地转向
+ *       -> 先脱旧路口，再等中间传感器稳定抓到新线
+ *       -> 岛内循迹
+ *       -> 出岛旋转（先脱当前线再找新线）
+ *       -> 恢复 FOLLOW / SLOW
  *
- * 不使用 overtake 模块，环岛通行直接 PWM 控制。
+ * HORN / SPEED_LIMIT / SPEED_RELEASE / PARK 保持原逻辑。
+ *
+ * Call FollowVision_Init() once,
+ * FollowVision_Tick() from SysTick every 1 ms.
  */
 
 #ifndef __FOLLOW_VISION_H
@@ -25,16 +33,11 @@ void FollowVision_Tick(void);
 
 /* ---- 调试接口 ---- */
 
-/**
- * @brief  Get current state name (for OLED display).
- * @retval "FOLLOW", "ISL_DLY", "ISL_R1", "ISL_FLW", "ISL_R2", "SLOW", "PARK", "HORN"
- */
 const char *FollowVision_GetStateName(void);
-
-/**
- * @brief  Get last received K210 sign payload.
- * @retval "L","R","H","W","F","1","2", or "-" if none.
- */
 const char *FollowVision_GetLastSign(void);
+
+/* LEFT/RIGHT 调参辅助：可在调试器里观察 */
+uint32_t FollowVision_GetTurnTravelCounts(void);
+uint8_t  FollowVision_IsTurnJunctionArmed(void);
 
 #endif /* __FOLLOW_VISION_H */

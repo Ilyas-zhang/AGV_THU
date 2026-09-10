@@ -34,3 +34,6 @@ sources/
 
 # Docs (local only, not tracked)
 docs/
+
+# K210 model files (large binaries)
+USER/task/vision_tasks/K210_model/
