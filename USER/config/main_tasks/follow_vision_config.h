@@ -14,7 +14,7 @@
 #define FV_LINE_RELEASE_SPEED   2300    /* 解除限速后循迹速度 */
 
 /* ---- 环岛通行参数 ---- */
-#define FV_ISLAND_DELAY_MS      250     /* 延缓期时长 ms（识别到路牌后直行接近入口） */
+#define FV_ISLAND_DELAY_MS      270    /* 延缓期时长 ms（识别到路牌后直行接近入口） */
 #define FV_ISLAND_RUN_MS        250     /* 岛内循迹时长 ms */
 #define FV_ISLAND_FWD_SPEED     2300    /* 延缓期直行速度 (≥2100) */
 #define FV_ISLAND_ROT_SPEED     3000    /* 原地旋转找线速度 (≥2100) */

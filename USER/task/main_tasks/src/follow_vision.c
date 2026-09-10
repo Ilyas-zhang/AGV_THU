@@ -50,6 +50,7 @@ static uint16_t  hb_cnt          = 0;          /* K210 心跳计数 (ms) */
 static char      last_sign[3]    = "-";        /* 最近路牌指令 */
 static uint16_t  fv_follow_speed = FV_LINE_BASE_SPEED; /* 当前循迹速度 */
 static uint8_t   lost_line       = 0;          /* ROT2 子状态: 0=等待脱线, 1=已脱线找新线 */
+static FV_State  horn_return     = FV_FOLLOW;  /* HORN 结束后返回的状态 */
 
 /* ---- helpers ---- */
 
@@ -94,6 +95,7 @@ void FollowVision_Init(void)
     hb_cnt          = 0;
     fv_follow_speed = FV_LINE_BASE_SPEED;
     lost_line       = 0;
+    horn_return     = FV_FOLLOW;
     last_sign[0]    = '-';
     last_sign[1]    = '\0';
 
@@ -149,6 +151,7 @@ void FollowVision_Tick(void)
                 /* 鸣笛 → 蜂鸣器响，自动关闭 */
                 record_sign("H");
                 Buzz_On();
+                horn_return = FV_FOLLOW;
                 fv_state = FV_HORN;
                 phase_ms = 0;
 
@@ -175,9 +178,11 @@ void FollowVision_Tick(void)
         if (phase_ms >= FV_ISLAND_DELAY_MS) {
             /* 延缓结束 → 原地旋转找环岛黑线 */
             if (fv_dir < 0) {
-                pwm_car_rotate_right(FV_ISLAND_ROT_SPEED);  /* 物理接线反向：代码 right = 实际左旋 */
+                /* 左转：左轮后退，右轮前进 → 物理左旋 */
+                car_diff_turn(-FV_ISLAND_ROT_SPEED, FV_ISLAND_ROT_SPEED);
             } else {
-                pwm_car_rotate_left(FV_ISLAND_ROT_SPEED);   /* 物理接线反向：代码 left = 实际右旋 */
+                /* 右转：左轮前进，右轮后退 → 物理右旋 */
+                car_diff_turn(FV_ISLAND_ROT_SPEED, -FV_ISLAND_ROT_SPEED);
             }
             fv_state = FV_ISLAND_ROT1;
             phase_ms = 0;
@@ -202,9 +207,11 @@ void FollowVision_Tick(void)
         if (phase_ms >= FV_ISLAND_RUN_MS) {
             /* 岛内循迹结束 → 原地旋转退出环岛 */
             if (fv_dir < 0) {
-                pwm_car_rotate_right(FV_ISLAND_ROT_SPEED);  /* 物理接线反向 */
+                /* 左转：左轮后退，右轮前进 → 物理左旋 */
+                car_diff_turn(-FV_ISLAND_ROT_SPEED, FV_ISLAND_ROT_SPEED);
             } else {
-                pwm_car_rotate_left(FV_ISLAND_ROT_SPEED);   /* 物理接线反向 */
+                /* 右转：左轮前进，右轮后退 → 物理右旋 */
+                car_diff_turn(FV_ISLAND_ROT_SPEED, -FV_ISLAND_ROT_SPEED);
             }
             lost_line = 0;
             fv_state = FV_ISLAND_ROT2;
@@ -257,9 +264,10 @@ void FollowVision_Tick(void)
                 phase_ms = 0;
 
             } else if (sign_eq(msg, "H")) {
-                /* 鸣笛 */
+                /* 鸣笛 — 鸣笛结束后回到 SLOW 继续限速 */
                 record_sign("H");
                 Buzz_On();
+                horn_return = FV_SLOW;
                 fv_state = FV_HORN;
                 phase_ms = 0;
             }
@@ -289,7 +297,7 @@ void FollowVision_Tick(void)
         LineFollow_Run(fv_follow_speed);
         if (phase_ms >= FV_HORN_MS) {
             Buzz_Off();
-            fv_state = FV_FOLLOW;
+            fv_state = horn_return;
             phase_ms = 0;
         }
         break;
